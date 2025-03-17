@@ -1,8 +1,18 @@
 """
 LLM prompts for research analysis and summarization.
+
+This module contains a collection of carefully crafted prompts used to
+instruct the LLM on how to process and analyze academic research papers.
+Each prompt is designed to elicit specific types of analysis and follows
+best practices in prompt engineering for research synthesis.
 """
 
+# Dictionary of prompt templates for different research analysis tasks
+# Each template uses {papers} as a placeholder which will be replaced
+# with the actual paper data at runtime
 RESEARCH_PROMPTS = {
+    # Comprehensive summary prompt - Used to generate a complete synthesis
+    # of multiple papers, covering all aspects in a structured format
     "comprehensive_summary": """
     Please provide a comprehensive summary of the following research papers. 
     Focus on synthesizing the key findings, methodologies, and conclusions across all papers.
@@ -25,6 +35,8 @@ RESEARCH_PROMPTS = {
     - Include specific citations when discussing findings
     """,
     
+    # Methodology analysis prompt - Focuses specifically on research methods
+    # Used when a detailed comparison of different methodological approaches is needed
     "methodology_analysis": """
     Analyze the methodologies used across these papers:
     {papers}
@@ -35,6 +47,8 @@ RESEARCH_PROMPTS = {
     3. Recommendations for future research
     """,
     
+    # Findings synthesis prompt - Extracts and combines the key results
+    # Used when the focus is specifically on research outcomes rather than methods
     "findings_synthesis": """
     Synthesize the key findings from these papers:
     {papers}
@@ -46,6 +60,8 @@ RESEARCH_PROMPTS = {
     4. Potential implications for future research
     """,
     
+    # Research gaps identification prompt - Analyzes limitations in current research
+    # Used to guide future research directions and identify opportunities
     "research_gaps": """
     Analyze these papers to identify research gaps:
     {papers}

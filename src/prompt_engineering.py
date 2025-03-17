@@ -1,60 +1,87 @@
 """
 Prompt engineering module for Deep Researcher.
 Handles query processing, response generation, and literature integration.
+
+This module contains the core prompt engineering logic for breaking down
+complex research queries, generating structured responses, and integrating
+academic literature findings into coherent research summaries.
 """
 
-from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass
-from .search.paper import Paper
-from .ollama_client import OllamaClient
-import re
+from typing import List, Dict, Optional, Tuple  # For type hints
+from dataclasses import dataclass  # For creating structured data classes
+from .search.paper import Paper  # For paper data model
+from .ollama_client import OllamaClient  # For LLM text generation
+import re  # For regular expression operations
 
 @dataclass
 class QueryComponent:
-    """Represents a component of the broken-down query."""
-    topic: str
-    subtopics: List[str]
-    year_range: Optional[Tuple[int, int]] = None
+    """
+    Represents a component of the broken-down research query.
+    
+    Each query component consists of a main topic and related subtopics,
+    optionally with a year range for temporal filtering of results.
+    """
+    topic: str  # The main topic (e.g., "CRISPR gene editing")
+    subtopics: List[str]  # Related subtopics (e.g., ["ethical considerations", "clinical applications"])
+    year_range: Optional[Tuple[int, int]] = None  # Optional year range for filtering (e.g., (2020, 2023))
 
 @dataclass
 class ResearchResponse:
-    """Represents the complete research response."""
-    initial_response: str
-    papers: List[Paper]
-    final_summary: str
-    citations: List[str]
+    """
+    Represents the complete research response with all components.
+    
+    This structured class holds all elements of a complete research response,
+    including the initial AI-generated content, relevant papers found,
+    the final synthesized summary, and formal citations.
+    """
+    initial_response: str  # Initial LLM response before literature integration
+    papers: List[Paper]  # Relevant papers found during search
+    final_summary: str  # Final synthesized summary with literature integration
+    citations: List[str]  # Formatted academic citations
 
 class PromptEngineer:
     """
-    Handles query processing and response generation.
+    Handles query processing and response generation using prompt engineering techniques.
+    
+    This class is responsible for:
+    1. Breaking down complex research queries into structured components
+    2. Generating initial responses based on model knowledge
+    3. Creating targeted search queries for literature search
+    4. Integrating literature findings into comprehensive research summaries
     """
     
     def __init__(self, ollama_client: OllamaClient):
         """
-        Initialize the prompt engineer.
+        Initialize the prompt engineer with an Ollama client for LLM access.
         
-        Parameters
-        ----------
-        ollama_client : OllamaClient
-            Client for generating text responses
+        Parameters:
+        -----------
+        ollama_client: Client for generating text responses using Ollama LLM API
+            This client handles all communication with the language model
         """
         self.ollama = ollama_client
     
     def process_query(self, query: str) -> List[QueryComponent]:
         """
-        Break down a complex query into components.
+        Break down a complex research query into structured components.
         
-        Parameters
-        ----------
-        query : str
-            The user's research query
+        This method:
+        1. Sends the query to the LLM with instructions for structured breakdown
+        2. Parses the LLM response into QueryComponent objects
+        3. Returns a list of components for systematic research
+        
+        Parameters:
+        -----------
+        query: The user's original research query
             
-        Returns
-        -------
-        list
-            List of QueryComponent objects
+        Returns:
+        --------
+        list: List of QueryComponent objects representing the structured breakdown
+              Each component contains a main topic and related subtopics
         """
-        # Generate a structured breakdown of the query using LLM
+        # Generate a structured breakdown of the query using the LLM
+        # The prompt instructs the model to format the response in a specific way
+        # that can be easily parsed into QueryComponent objects
         prompt = f"""
         Break down this research query into main topics and subtopics:
         Query: {query}
@@ -69,32 +96,35 @@ class PromptEngineer:
         Only output the structured list, nothing else.
         """
         
+        # Get the structured breakdown from the LLM
         response = self.ollama.generate(prompt)
         
         # Parse the response into QueryComponents
+        # This section analyzes the text line by line to extract topics and subtopics
         components = []
         current_topic = None
         current_subtopics = []
         
+        # Process each line of the response
         for line in response.split('\n'):
             line = line.strip()
-            if not line:
+            if not line:  # Skip empty lines
                 continue
                 
-            if line.startswith('- '):
-                # If we have a previous topic, save it
+            if line.startswith('- '):  # Main topic line
+                # If we have a previous topic, save it before starting a new one
                 if current_topic:
                     components.append(QueryComponent(
                         topic=current_topic,
                         subtopics=current_subtopics
                     ))
-                # Start new topic
+                # Start a new topic
                 current_topic = line[2:].strip()
                 current_subtopics = []
-            elif line.startswith('* '):
+            elif line.startswith('* '):  # Subtopic line
                 current_subtopics.append(line[2:].strip())
         
-        # Add the last topic
+        # Don't forget to add the last topic after loop ends
         if current_topic:
             components.append(QueryComponent(
                 topic=current_topic,
@@ -107,24 +137,29 @@ class PromptEngineer:
         """
         Generate an initial response to the query before literature search.
         
-        Parameters
-        ----------
-        query : str
-            The original query
-        components : list
-            Broken down query components
+        This method creates a well-structured response that:
+        1. Addresses each component of the research query
+        2. Provides context and background information
+        3. Identifies areas where literature support would be valuable
+        
+        Parameters:
+        -----------
+        query: The original research query from the user
+        components: Broken down query components from process_query()
             
-        Returns
-        -------
-        str
-            Initial response
+        Returns:
+        --------
+        str: A comprehensive initial response based on the LLM's knowledge
         """
-        # Create a prompt that includes the original query and its components
+        # Format the components into a string for the prompt
+        # This recreates the hierarchical structure for the LLM
         topics_str = "\n".join(
             f"- {comp.topic}\n" + "\n".join(f"  * {sub}" for sub in comp.subtopics)
             for comp in components
         )
         
+        # Create a detailed prompt that guides the LLM to generate
+        # a comprehensive initial response addressing all query components
         prompt = f"""
         Generate a comprehensive initial response to this research query:
         
@@ -142,29 +177,38 @@ class PromptEngineer:
         Response:
         """
         
+        # Generate and return the initial response
         return self.ollama.generate(prompt)
     
     def generate_search_queries(self, components: List[QueryComponent]) -> List[str]:
         """
-        Generate specific search queries for each component.
+        Generate specific search queries for each component of the research question.
         
-        Parameters
-        ----------
-        components : list
-            Query components to generate searches for
+        This method creates targeted search queries by:
+        1. Using each main topic as a standalone query
+        2. Combining each main topic with each of its subtopics
+        
+        This approach ensures comprehensive coverage of the research area
+        while maintaining specificity for relevant results.
+        
+        Parameters:
+        -----------
+        components: Query components from process_query()
             
-        Returns
-        -------
-        list
-            List of search queries
+        Returns:
+        --------
+        list: List of search queries to use for literature search
         """
         search_queries = []
         
+        # Process each component to generate search queries
         for component in components:
-            # Add main topic query
+            # Add the main topic as a standalone query
+            # This provides broader context papers
             search_queries.append(component.topic)
             
             # Add queries combining main topic with each subtopic
+            # These provide more specific, targeted papers
             for subtopic in component.subtopics:
                 combined_query = f"{component.topic} {subtopic}"
                 search_queries.append(combined_query)
@@ -177,21 +221,24 @@ class PromptEngineer:
         papers: List[Paper]
     ) -> ResearchResponse:
         """
-        Integrate literature findings with the initial response.
+        Integrate literature findings with the initial AI response.
         
-        Parameters
-        ----------
-        initial_response : str
-            The initial AI-generated response
-        papers : list
-            List of relevant papers found
+        This critical method:
+        1. Combines AI knowledge with evidence from academic papers
+        2. Creates a cohesive summary that incorporates literature findings
+        3. Generates proper academic citations for the papers
+        
+        Parameters:
+        -----------
+        initial_response: The AI-generated response before literature search
+        papers: List of relevant papers found during search
             
-        Returns
-        -------
-        ResearchResponse
-            Complete response with summary and citations
+        Returns:
+        --------
+        ResearchResponse: Complete research response with summary and citations
         """
-        # Create a summary of the papers
+        # Create a formatted summary of the papers for the LLM
+        # This extracts key metadata in a consistent format
         papers_summary = "\n\n".join(
             f"Title: {paper.title}\n"
             f"Authors: {', '.join(paper.authors)}\n"
@@ -200,7 +247,8 @@ class PromptEngineer:
             for paper in papers
         )
         
-        # Generate integrated summary
+        # Generate integrated summary using a detailed prompt
+        # This prompt guides the LLM to synthesize information and add citations
         prompt = f"""
         Integrate this initial response with the findings from academic literature:
         
@@ -223,21 +271,25 @@ class PromptEngineer:
         Response:
         """
         
+        # Generate the integrated response
         response = self.ollama.generate(prompt)
         
-        # Split response into summary and citations
+        # Parse the response to separate summary from citations
+        # The response should have a "Citations:" section
         parts = response.split("Citations:", 1)
         final_summary = parts[0].strip()
         citations = []
         
+        # If citations section exists, extract individual citations
         if len(parts) > 1:
-            # Extract citations
+            # Get each citation as a separate item
             citations = [
                 cite.strip()
                 for cite in parts[1].split("\n")
-                if cite.strip()
+                if cite.strip()  # Skip empty lines
             ]
         
+        # Return a structured ResearchResponse object with all components
         return ResearchResponse(
             initial_response=initial_response,
             papers=papers,
