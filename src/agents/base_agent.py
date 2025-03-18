@@ -10,6 +10,9 @@ from typing import Dict, Any, Optional  # For type hints
 from abc import ABC, abstractmethod  # For abstract class definition
 from ..llm.ollama_client import OllamaClient  # For LLM interaction
 
+## TODO: 
+# Expand to necessary agents
+#
 class BaseAgent(ABC):
     """
     Base class for all agents in the multi-agent research system.

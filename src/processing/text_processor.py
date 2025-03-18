@@ -21,6 +21,7 @@ class TextProcessor:
     4. Identifying key sections like findings and methodology
     """
     
+    ## TODO: Extend to include main text when available
     def process_papers(self, papers: List[Dict]) -> List[Dict]:
         """
         Process a list of papers to prepare them for LLM analysis.
@@ -94,6 +95,7 @@ class TextProcessor:
         
         return text
     
+    ## TODO: Check if authors formatting is always possible and correct
     def _format_authors(self, authors: List[Dict]) -> str:
         """
         Format author list into a readable string.
@@ -124,6 +126,8 @@ class TextProcessor:
         # Join all authors with comma separator
         return ", ".join(author_names) if author_names else "Unknown"
     
+    ## TODO: Check if key findings extraction is always possible and correct
+    ## TODO: Check if key findings extraction is better done with LLM
     def _extract_key_findings(self, abstract: str) -> str:
         """
         Extract key findings from the abstract using pattern matching.
@@ -163,6 +167,8 @@ class TextProcessor:
         # Return joined findings or default message
         return " ".join(findings) if findings else "No key findings explicitly stated."
     
+    ## TODO: Check if methodology extraction is always possible and correct
+    ## TODO: Check if methodology extraction is better done with LLM
     def _extract_methodology(self, abstract: str) -> str:
         """
         Extract methodology information from the abstract.

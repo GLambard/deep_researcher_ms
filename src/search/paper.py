@@ -10,6 +10,8 @@ from typing import List, Optional  # For type hints
 from dataclasses import dataclass  # For creating immutable data classes
 import hashlib  # For generating unique paper hashes
 
+## TODO: Add fields when needed
+
 @dataclass
 class Paper:
     """

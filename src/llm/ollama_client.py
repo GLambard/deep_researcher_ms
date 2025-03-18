@@ -6,6 +6,10 @@ which allows running various open-source large language models locally. It abstr
 away the API communication details and provides a simple interface for text generation.
 """
 
+## TODO: 
+# Add a class for OpenAI/Anthropic/LMStudio API endpoints
+##
+
 import requests  # For making HTTP requests to the Ollama API
 from typing import Dict, List, Any, Optional  # For type hints
 import json  # For parsing JSON responses
@@ -22,7 +26,7 @@ class OllamaClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",  # Default Ollama server address
-        model: str = "mistral",  # Default to Mistral as it's a good balance of performance and speed
+        model: str = "mistral:7b",  # Default to Mistral as it's a good balance of performance and speed
         temperature: float = 0.7  # Default temperature for generation
     ):
         """
@@ -33,16 +37,20 @@ class OllamaClient:
         base_url: URL of the Ollama instance
             The address where Ollama server is running
         model: Model to use for text generation
-            Examples include 'llama2', 'mistral', 'codellama', 'deepseek-r1'
-        temperature: Controls randomness in text generation
-            Lower values (e.g., 0.1) are more deterministic
-            Higher values (e.g., 1.0) produce more diverse outputs
+            Examples include 'llama2', 'mistral', 'codellama', 'deepseek-r1', 'gemma3:4b'
+        temperature: Controls surprise in text generation
+            Lower values (e.g., 0.1) are more deterministic, more expected outputs
+            Higher values (e.g., 1.0) produce more unexpected, diverse outputs
         """
         # Store base URL with trailing slash removed for consistency
         self.base_url = base_url.rstrip('/')
         self.model = model
         self.temperature = temperature
     
+    ## TODO: 
+    # Check streaming (Default: False)
+    # Enhance response.json()["response"] to include "thinking" tokens for reasoning models
+    #
     def generate(
         self,
         system_prompt: str,  # Context/instructions for the LLM
@@ -65,7 +73,7 @@ class OllamaClient:
         user_prompt: The specific input or query from the user
             The actual content the LLM should respond to
         temperature: Optional override for the default temperature setting
-            Allows adjusting randomness per request
+            Allows adjusting surprise per request
             
         Returns:
         --------
@@ -130,6 +138,9 @@ class OllamaClient:
             # Any exception means Ollama is not properly available
             return False
     
+    ## TODO: 
+    # Model won't be pulled if behind a proxy
+    # 
     def load_model(self) -> bool:
         """
         Ensure the configured model is loaded and ready for use.

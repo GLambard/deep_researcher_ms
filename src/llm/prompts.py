@@ -13,6 +13,15 @@ best practices in prompt engineering for research synthesis.
 RESEARCH_PROMPTS = {
     # Comprehensive summary prompt - Used to generate a complete synthesis
     # of multiple papers, covering all aspects in a structured format
+    ## DONE: 
+    # Identify gaps in the research
+    ##
+    ## TODO: 
+    # This prompt makes the assumption that the context window is large enough to include all the papers.
+    # Update the methodology to handle the case where the context window is not large enough.
+    # Update the methodology such that a map-reduce approach is used to generate the summary.
+    # Make sure that references are cited in the summary, not on
+    ##
     "comprehensive_summary": """
     Please provide a comprehensive summary of the following research papers. 
     Focus on synthesizing the key findings, methodologies, and conclusions across all papers.
@@ -32,11 +41,20 @@ RESEARCH_PROMPTS = {
     - Highlight connections between different papers
     - Note any conflicting findings
     - Identify emerging trends or patterns
+    - Identify gaps in the research
     - Include specific citations when discussing findings
     """,
     
     # Methodology analysis prompt - Focuses specifically on research methods
     # Used when a detailed comparison of different methodological approaches is needed
+    ## DONE: 
+    # Include specific citations when analyzing the methodologies
+    ## TODO: 
+    # This prompt makes the assumption that the context window is large enough to include all the papers.
+    # Update the methodology to handle the case where the context window is not large enough.
+    # Update the methodology such that a map-reduce approach is used to generate the analysis.
+    # Make sure that references are cited in the analysis
+    ##
     "methodology_analysis": """
     Analyze the methodologies used across these papers:
     {papers}
@@ -45,10 +63,22 @@ RESEARCH_PROMPTS = {
     1. A comparison of different approaches used
     2. Strengths and limitations of each method
     3. Recommendations for future research
+    4. References
+
+    Make sure to:
+    - Include specific citations when analyzing the methodologies
     """,
     
     # Findings synthesis prompt - Extracts and combines the key results
     # Used when the focus is specifically on research outcomes rather than methods
+    ## DONE: 
+    # Include specific citations when synthesizing the findings
+    ## TODO: 
+    # This prompt makes the assumption that the context window is large enough to include all the papers.
+    # Update the methodology to handle the case where the context window is not large enough.
+    # Update the methodology such that a map-reduce approach is used to generate the analysis.
+    # Make sure that references are cited in the analysis
+    ##
     "findings_synthesis": """
     Synthesize the key findings from these papers:
     {papers}
@@ -58,10 +88,23 @@ RESEARCH_PROMPTS = {
     2. Supporting evidence for each finding
     3. Any contradictions or debates in the field
     4. Potential implications for future research
+    5. References
+
+    Make sure to:
+    - Include specific citations when synthesizing the findings
     """,
     
     # Research gaps identification prompt - Analyzes limitations in current research
     # Used to guide future research directions and identify opportunities
+    ## DONE: 
+    # Identify gaps in the research
+    # Include specific citations when identifying the gaps
+    ## TODO: 
+    # This prompt makes the assumption that the context window is large enough to include all the papers.
+    # Update the methodology to handle the case where the context window is not large enough.
+    # Update the methodology such that a map-reduce approach is used to generate the analysis.
+    # Make sure that references are cited in the analysis
+    ##
     "research_gaps": """
     Analyze these papers to identify research gaps:
     {papers}
@@ -71,5 +114,10 @@ RESEARCH_PROMPTS = {
     2. Areas that need further investigation
     3. Potential future research directions
     4. Recommendations for addressing these gaps
-    """
+    5. References
+
+    Make sure to:
+    - Identify gaps in the research
+    - Include specific citations when identifying the gaps
+    """,
 } 

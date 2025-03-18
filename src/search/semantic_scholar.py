@@ -66,6 +66,9 @@ class SemanticScholarAPI:
         list: List of Paper objects matching the query
               Empty list if search fails or no results found
         """
+
+        ## TODO: Check list of fields to retrieve
+
         # Prepare search parameters for the API request
         # Specify which fields we want to retrieve for each paper
         params = {
