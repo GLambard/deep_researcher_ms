@@ -9,6 +9,11 @@ for more effective literature search and analysis.
 from typing import Dict, Any, List  # For type hints
 from .base_agent import BaseAgent  # Base class for all agents
 
+## TODO: 
+# Ask a first question to the user to refine the query as the o1 PRO deepresearch model from OpenAI
+# Refine the system and user prompts
+# Improve how the output formatting is handled
+#
 class QueryPlannerAgent(BaseAgent):
     """
     Agent responsible for breaking down complex queries into sub-queries.
@@ -91,6 +96,11 @@ Format your response as JSON with the following structure:
             "plan": response  # Raw response containing JSON-formatted plan
         }
     
+    ## TODO: 
+    # The context may not be handled correctly because of reduced context window
+    # Check how to improve the context handling by successive refinements a-la map-reduce
+    # Need to incorporate a tokens counter such as tiktoken
+    # 
     def generate_follow_up_queries(self, context: Dict[str, Any]) -> List[str]:
         """
         Generate follow-up queries based on current research findings.

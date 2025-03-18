@@ -9,6 +9,11 @@ structured assessments and filtering of papers based on relevance scores.
 from typing import Dict, Any, List  # For type hints
 from .base_agent import BaseAgent  # Base class for all agents
 
+## TODO: 
+# Check if relevance is only related to the first query only or to each query in the query plan
+# Improve the relevance scoring mechanism, e.g., a simple boolean may be more reliable, etc
+# Improve the prompt to handle the case where the context window is not large enough
+#
 class RelevanceEvaluatorAgent(BaseAgent):
     """
     Agent responsible for evaluating paper relevance to research queries.

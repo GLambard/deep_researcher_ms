@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod  # For abstract class definition
 from ..llm.ollama_client import OllamaClient  # For LLM interaction
 
 ## TODO: 
+# Update the default research-optimized model
 # Expand to necessary agents
 #
 class BaseAgent(ABC):
@@ -44,8 +45,8 @@ class BaseAgent(ABC):
             Shared across agents to avoid redundant connections
         model: LLM model to use for specialized agent tasks
             Default is deepseek-r1:8b, optimized for research tasks
-        temperature: Controls randomness in LLM responses
-            Higher values increase creativity but reduce consistency
+        temperature: Controls surprise in LLM responses
+            Higher values increase diversity but reduce consistency
         """
         self.llm_client = llm_client
         self.model = model
