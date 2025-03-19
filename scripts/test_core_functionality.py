@@ -49,12 +49,12 @@ def setup_components():
             else:
                 print("1. Open Terminal")
                 print("2. Run: ollama serve")
-            return None, None, None
+            return (None,) * 3
         
         # Check if model is available
         print("Checking Ollama model...")
         if not ollama.setup_model():
-            return None, None, None
+            return (None,) * 3
         
         print("✓ Ollama setup complete")
         
@@ -72,8 +72,11 @@ def setup_components():
         
     except Exception as e:
         print(f"\nError during setup: {e}")
-        return None, None, None
+        return (None,) * 3
 
+## TODO: 
+# - Update the research_output.txt naming with a unique id for each query, e.g. research_output_<date_time>.txt
+# 
 def process_query(query: str, prompt_engineer: PromptEngineer, literature_manager: LiteratureManager):
     """Process a research query."""
     try:
@@ -105,7 +108,7 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             try:
                 papers = literature_manager.search(
                     query=search_query,
-                    max_papers=5  # Limit papers per query
+                    max_papers=10  # Limit papers per query
                 )
                 all_papers.extend(papers)
             except Exception as e:

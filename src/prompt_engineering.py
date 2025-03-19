@@ -61,6 +61,9 @@ class PromptEngineer:
         """
         self.ollama = ollama_client
     
+    ## TODO: 
+    # - Check a better structuration of the outputs
+    # 
     def process_query(self, query: str) -> List[QueryComponent]:
         """
         Break down a complex research query into structured components.

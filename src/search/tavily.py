@@ -87,6 +87,7 @@ class TavilyAPI:
     # - chemrxiv.org
     # - biorxiv.org
     # - medrxiv.org
+    # - openalex.org/works
     # - springeropen.com
     # - onlinelibrary.wiley.com
     # - link.springer.com
@@ -159,6 +160,7 @@ class TavilyAPI:
                 "medrxiv.org",
                 #"researchgate.net",
                 "semanticscholar.org",
+                "openalex.org/works", 
                 #"ncbi.nlm.nih.gov",
                 "sciencedirect.com",
                 "springer.com",
