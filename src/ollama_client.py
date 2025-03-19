@@ -11,6 +11,10 @@ from typing import Optional  # For type hints
 import time  # For implementing retry delays
 import sys  # For platform detection and path operations
 
+## TODO: 
+# Add a class for OpenAI/Anthropic/LMStudio API endpoints
+##
+
 class OllamaClient:
     """
     Client for interacting with Ollama API.
@@ -33,7 +37,7 @@ class OllamaClient:
         -----------
         model: Name of the LLM to use (default: deepseek-r1:8b)
             Specifies which model Ollama should use for text generation
-        temperature: Controls randomness in generated text (0.0 to 1.0)
+        temperature: Controls determinism in generated text (0.0 to 1.0)
             Lower values produce more deterministic outputs
             Higher values produce more creative/diverse outputs
         base_url: URL where the Ollama server is running
