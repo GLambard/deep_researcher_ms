@@ -40,6 +40,9 @@ class TavilyAPI:
             "Authorization": f"Bearer {api_key}" if api_key else ""
         })
     
+    ## TODO: 
+    # Check if an LLM is needed to extract the year from the content
+    #
     def _extract_year(self, content: str) -> Optional[int]:
         """
         Extract publication year from content using various patterns.
@@ -79,6 +82,38 @@ class TavilyAPI:
         
         return None
     
+    ## DONE: 
+    # Added the following domains to the search:
+    # - chemrxiv.org
+    # - biorxiv.org
+    # - medrxiv.org
+    # - springeropen.com
+    # - onlinelibrary.wiley.com
+    # - link.springer.com
+    # - pubs.acs.org
+    # - pubs.rsc.org
+    # - ieeexplore.ieee.org
+    # - iopscience.iop.org
+    # - pubs.aip.org
+    # - tandfonline.com
+    # - mdpi.com
+    # - frontiersin.org
+    # - plos.org
+    # - hindawi.com
+    # - nature.com/ncomms
+    # - nature.com/srep
+    # - science.org/journal/sciadv
+    #
+    # Removed the following domains:
+    # - researchgate.net
+    # - mdpi.com
+    # - ncbi.nlm.nih.gov
+    #
+    ## TODO: 
+    # Remove the domains that are not needed, e.g. researchgate.net
+    # May use the OpenAlex API to get the DOI
+    # Check if an LLM is needed to extract the authors from the content
+    #
     def search(
         self,
         query: str,
@@ -119,14 +154,37 @@ class TavilyAPI:
             "include_domains": [
                 "scholar.google.com",
                 "arxiv.org",
-                "researchgate.net",
+                "chemrxiv.org",
+                "biorxiv.org",
+                "medrxiv.org",
+                #"researchgate.net",
                 "semanticscholar.org",
-                "ncbi.nlm.nih.gov",
+                #"ncbi.nlm.nih.gov",
                 "sciencedirect.com",
                 "springer.com",
                 "nature.com",
                 "science.org",
-                "wiley.com"
+                "wiley.com", 
+                #"mdpi.com",
+                "frontiersin.org",
+                "plos.org",
+                "hindawi.com", 
+                "nature.com/ncomms",
+                "nature.com/srep",
+                "science.org/journal/sciadv",   
+                "pubs.acs.org/journal/acsodf",
+                "onlinelibrary.wiley.com/journal/21983844",
+                "pubs.rsc.org/en/journals/journal/RA",  
+                "pubs.aip.org/aip/adv", 
+                "springeropen.com",
+                "onlinelibrary.wiley.com",
+                "link.springer.com", 
+                "pubs.acs.org",
+                "pubs.rsc.org",
+                "ieeexplore.ieee.org",
+                "iopscience.iop.org",
+                "pubs.aip.org",
+                "tandfonline.com", 
             ],
             "max_results": min(limit, 20),  # Tavily's limit is 20
             "search_type": "search"
