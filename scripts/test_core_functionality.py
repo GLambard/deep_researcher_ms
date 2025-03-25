@@ -35,8 +35,8 @@ def setup_components():
         # Initialize Ollama client
         print("\nInitializing Ollama client...")
         ollama = OllamaClient(
-            model="deepseek-r1:8b",  # Changed to deepseek-r1:8b
-            temperature=0.7
+            model="gemma3:4b",  # Changed to deepseek-r1:8b
+            temperature=0 # 0.7
         )
         
         # Check Ollama server
@@ -108,7 +108,7 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             try:
                 papers = literature_manager.search(
                     query=search_query,
-                    max_papers=10  # Limit papers per query
+                    max_papers=1  # Limit papers per query
                 )
                 all_papers.extend(papers)
             except Exception as e:

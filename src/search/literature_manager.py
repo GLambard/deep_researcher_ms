@@ -63,7 +63,46 @@ class LiteratureManager:
         # List to store history of all searches performed
         self.search_history: List[Dict] = []
     
-    async def search(
+    def search(
+        self,
+        query: str,
+        max_papers: int = 10,
+        year_range: Optional[Tuple[int, int]] = None,
+        sources: Optional[List[str]] = None
+    ) -> List[Paper]:
+        """
+        Synchronous wrapper for the async search method.
+        
+        This method creates a new event loop if needed and runs the async search
+        method within it, allowing for synchronous usage of the API.
+        
+        Parameters:
+        -----------
+        query: The search query string for finding relevant papers
+        max_papers: Maximum number of papers to return per source (default: 10)
+        year_range: Optional tuple of (start_year, end_year) for filtering
+        sources: Optional list of sources to use
+            
+        Returns:
+        --------
+        list: List of unique Paper objects matching the query
+        """
+        # Check if we're already in an event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in an event loop already, can't use run_until_complete
+                print("Warning: Running in an existing event loop, asyncio.run() not possible")
+                print("Please use async_search() method instead in asynchronous code")
+                return []
+        except RuntimeError:
+            # No event loop exists, create a new one
+            pass
+        
+        # Run the async search in a new event loop
+        return asyncio.run(self.async_search(query, max_papers, year_range, sources))
+
+    async def async_search(
         self,
         query: str,
         max_papers: int = 10,
@@ -95,7 +134,7 @@ class LiteratureManager:
         try:
             # Map of source keys to search functions
             source_map = {
-                "tavily": self._search_tavily,
+                #"tavily": self._search_tavily, # TODO: Add this back in but with another API (expensive)
                 #"semantic_scholar": self._search_semantic_scholar,
                 "open_alex": self._search_open_alex,
                 "arxiv": self._search_arxiv,

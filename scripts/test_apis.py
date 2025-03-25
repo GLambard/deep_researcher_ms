@@ -45,7 +45,7 @@ async def run_search(query, sources=None, max_papers=5):
     
     try:
         # Search for papers
-        papers = await literature_manager.search(
+        papers = await literature_manager.async_search(
             query=query,
             max_papers=max_papers,
             sources=sources
