@@ -26,10 +26,10 @@ from tenacity import (
     wait_exponential,
 )
 
-from ..common.adapter_base import LiteratureAdapter
-from ..common.models import Author, PaperMetadata, QueryParams, QueryResult
-from ..utils.cache import cached
-from ..utils.rate_limiter import get_rate_limiter
+from common.adapter_base import LiteratureAdapter
+from common.models import Author, PaperMetadata, QueryParams, QueryResult
+from utils.cache import cached
+from utils.rate_limiter import get_rate_limiter
 
 
 class ChemRxivAPIError(Exception):
@@ -487,7 +487,7 @@ class ChemRxivAdapter(LiteratureAdapter):
         """
         # Convert string query to QueryParams
         if isinstance(query_or_params, str):
-            from src.common.models import QueryParams
+            from common.models import QueryParams
             params = QueryParams(
                 keywords=query_or_params,
                 offset=(page - 1) * per_page,

@@ -32,10 +32,10 @@ from tenacity import (
     wait_exponential,
 )
 
-from ..common.adapter_base import LiteratureAdapter
-from ..common.models import Author, PaperMetadata, QueryParams, QueryResult
-from ..utils.cache import cached
-from ..utils.rate_limiter import get_rate_limiter
+from common.adapter_base import LiteratureAdapter
+from common.models import Author, PaperMetadata, QueryParams, QueryResult
+from utils.cache import cached
+from utils.rate_limiter import get_rate_limiter
 
 
 class OpenAlexAPIError(Exception):

@@ -12,7 +12,7 @@ import json  # For parsing JSON responses from LLMs
 from dotenv import load_dotenv  # For loading environment variables from .env file
 
 # Import core components from submodules
-from .search.semantic_scholar import SemanticScholarAPI  # Academic paper search API
+from .search.literature_manager import LiteratureManager  # Literature search management
 from .processing.text_processor import TextProcessor  # Text processing utilities
 from .llm.prompts import RESEARCH_PROMPTS  # Predefined prompts for research tasks
 from .agents.query_planner import QueryPlannerAgent  # Agent for breaking down research queries
@@ -33,7 +33,6 @@ class DeepResearcher:
     
     def __init__(
         self,
-        semantic_scholar_api_key: Optional[str] = None,
         model: str = "deepseek-r1:8b",  # Using DeepSeek as default model - optimized for research tasks
         temperature: float = 0.7  # Balances creativity and determinism in responses
     ):
@@ -42,7 +41,6 @@ class DeepResearcher:
         
         Parameters:
         -----------
-        semantic_scholar_api_key: Optional API key for Semantic Scholar (can be provided in .env)
         model: The Ollama model to use (default: deepseek-r1:8b which excels at academic content)
         temperature: Controls randomness in LLM responses (higher = more creative, lower = more deterministic)
         """
@@ -51,9 +49,7 @@ class DeepResearcher:
         
         # Initialize API clients for external services
         self.ollama_client = OllamaClient(model=model, temperature=temperature)
-        self.semantic_scholar = SemanticScholarAPI(
-            api_key=semantic_scholar_api_key or os.getenv("SEMANTIC_SCHOLAR_API_KEY")
-        )
+        self.literature_manager = LiteratureManager()
         
         # Initialize text processing component
         self.text_processor = TextProcessor()
@@ -73,7 +69,7 @@ class DeepResearcher:
             "summaries": []  # Summaries generated for each sub-query
         }
     
-    def start_research(self, query: str) -> Dict[str, Any]:
+    async def start_research(self, query: str, sources: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Start a new research conversation with the given query.
         
@@ -85,6 +81,7 @@ class DeepResearcher:
         Parameters:
         -----------
         query: The initial research query from the user
+        sources: Optional list of sources to use (e.g., ["tavily", "semantic_scholar", "arxiv", "open_alex", "chemrxiv"])
             
         Returns:
         --------
@@ -112,7 +109,7 @@ class DeepResearcher:
             
             # Execute the highest priority sub-query first
             first_query = sub_queries[priority_order[0]]
-            results = self._execute_sub_query(first_query)
+            results = await self._execute_sub_query(first_query, sources)
             
             # Return plan, initial results, and suggested next steps
             return {
@@ -128,7 +125,7 @@ class DeepResearcher:
                 "next_steps": ["Please rephrase your query"]
             }
     
-    def continue_research(self, feedback: Optional[str] = None) -> Dict[str, Any]:
+    async def continue_research(self, feedback: Optional[str] = None, sources: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Continue the research based on current state and optional user feedback.
         
@@ -140,6 +137,7 @@ class DeepResearcher:
         Parameters:
         -----------
         feedback: Optional user feedback to guide further research
+        sources: Optional list of sources to use for literature search
             
         Returns:
         --------
@@ -153,11 +151,11 @@ class DeepResearcher:
         # Check if all sub-queries have been completed
         if current_progress >= len(plan_data["sub_queries"]):
             # Research complete - generate final synthesis and follow-up suggestions
-            return self._generate_final_synthesis()
+            return await self._generate_final_synthesis()
         
         # Execute the next sub-query based on priority order
         next_query = plan_data["sub_queries"][plan_data["priority_order"][current_progress]]
-        results = self._execute_sub_query(next_query)
+        results = await self._execute_sub_query(next_query, sources)
         
         # Return results and suggest next steps
         return {
@@ -165,7 +163,7 @@ class DeepResearcher:
             "next_steps": self._get_next_steps(plan_data, current_progress + 1)
         }
     
-    def _execute_sub_query(self, query_info: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_sub_query(self, query_info: Dict[str, Any], sources: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Execute a single sub-query and process the results.
         
@@ -179,16 +177,30 @@ class DeepResearcher:
         Parameters:
         -----------
         query_info: Dictionary containing the sub-query and related metadata
+        sources: Optional list of sources to use for literature search
         
         Returns:
         --------
         dict: Contains the query info, relevant papers, and summary
         """
-        # Search for papers using Semantic Scholar API
-        papers = self.semantic_scholar.search(
+        # Extract year range if specified in the query info
+        year_range = None
+        if "year_range" in query_info:
+            try:
+                # Parse year range string in format "YYYY-YYYY"
+                years = query_info["year_range"].split("-")
+                if len(years) == 2:
+                    year_range = (int(years[0]), int(years[1]))
+            except (ValueError, AttributeError):
+                # Malformed year range, ignore it
+                pass
+        
+        # Search for papers using the literature manager
+        papers = await self.literature_manager.search(
             query=query_info["query"],
-            limit=10,  # Fetch up to 10 papers for this sub-query
-            year_range=query_info.get("year_range")  # Optional date filtering
+            max_papers=10,  # Fetch up to 10 papers for this sub-query
+            year_range=year_range,  # Optional date filtering
+            sources=sources  # Optional sources to use
         )
         
         # Process papers to extract and structure relevant information
@@ -251,57 +263,61 @@ class DeepResearcher:
         
         Parameters:
         -----------
-        plan: The current research plan
-        current_step: The index of the current step in the research process
+        plan: The research plan
+        current_step: The current step number
         
         Returns:
         --------
-        list: Suggested next actions for the user
+        list: Suggested next steps
         """
-        # Check if all sub-queries have been completed
+        # Check if we're done with all sub-queries
         if current_step >= len(plan["sub_queries"]):
-            # Research complete - suggest final actions
-            return ["Research complete. Would you like to:",
-                   "1. Get a final synthesis",
-                   "2. Explore follow-up questions",
-                   "3. Start a new research query"]
+            return ["Generate final synthesis"]
         
-        # Research in progress - suggest continuing or modifying
-        next_query = plan["sub_queries"][plan["priority_order"][current_step]]
+        # Get the next sub-query based on priority order
+        next_query_index = plan["priority_order"][current_step]
+        next_query = plan["sub_queries"][next_query_index]
+        
+        # Suggest next steps based on the query plan
         return [
-            f"Continue with sub-query: {next_query['query']}",
-            "Modify the research plan",
-            "Get current synthesis",
-            "Start a new research query"
+            f"Execute sub-query: {next_query['query']}",
+            "Provide feedback on current results",
+            "Change literature search sources"
         ]
     
-    def _generate_final_synthesis(self) -> Dict[str, Any]:
+    async def _generate_final_synthesis(self) -> Dict[str, Any]:
         """
-        Generate a final synthesis of all research findings and suggest follow-up directions.
-        
-        This is called when all sub-queries have been completed, to produce:
-        1. A comprehensive synthesis of all relevant papers
-        2. Suggestions for follow-up research questions
+        Generate a final synthesis of all research findings.
         
         Returns:
         --------
-        dict: Contains the synthesis, follow-up suggestions, and statistics
+        dict: Contains the final synthesis and follow-up suggestions
         """
-        # Generate comprehensive synthesis of all relevant papers
-        synthesis = self._generate_summary(self.current_research["relevant_papers"])
+        # Get all summaries from completed sub-queries
+        summaries = [item["summary"] for item in self.current_research["summaries"]]
+        original_query = self.current_research["original_query"]
         
-        # Generate follow-up queries based on the research findings
-        follow_ups = self.query_planner.generate_follow_up_queries({
-            "original_query": self.current_research["original_query"],
-            "summary": synthesis
-        })
+        # Create a prompt for the synthesis
+        synthesis_prompt = RESEARCH_PROMPTS["final_synthesis"].format(
+            query=original_query,
+            summaries="\n\n".join(summaries)
+        )
         
-        # Return synthesis, follow-up suggestions, and statistics
+        # Generate the synthesis
+        synthesis = self.ollama_client.generate(
+            system_prompt="You are a research assistant creating a comprehensive synthesis of findings.",
+            user_prompt=synthesis_prompt
+        )
+        
+        # Get statistics about the search
+        search_stats = self.literature_manager.get_search_statistics()
+        
+        # Return the final results
         return {
             "synthesis": synthesis,
-            "follow_up_suggestions": follow_ups,
-            "paper_count": len(self.current_research["relevant_papers"]),
-            "sub_queries_completed": len(self.current_research["sub_queries"])
+            "search_statistics": search_stats,
+            "sub_query_results": self.current_research["summaries"],
+            "is_complete": True
         }
 
 # Package metadata

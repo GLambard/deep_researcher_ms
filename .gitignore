@@ -40,6 +40,7 @@ ENV/
 outputs/
 logs/
 *.log
+.cache/
 
 # Jupyter Notebook
 .ipynb_checkpoints

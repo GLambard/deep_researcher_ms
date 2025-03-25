@@ -1,12 +1,13 @@
 # Deep Researcher scRNA
 
-A powerful research assistant that leverages the Tavily API for academic literature search and local LLMs through Ollama for text generation and analysis. Specifically designed for single-cell RNA sequencing research.
+A powerful research assistant that leverages multiple academic literature APIs including Tavily, Semantic Scholar, OpenAlex, ArXiv, and ChemArXiv along with local LLMs through Ollama for text generation and analysis. Specifically designed for single-cell RNA sequencing research.
 
 ## Prerequisites
 
 - Python 3.8+
 - [Ollama](https://ollama.ai/) installed and running locally
 - Tavily API key (get one from [Tavily](https://tavily.com/))
+- Semantic Scholar API key (optional, get one from [Semantic Scholar](https://www.semanticscholar.org/product/api))
 
 ## Setup
 
@@ -25,9 +26,11 @@ pip install -r requirements.txt
 ```bash
 cp .env.template .env
 ```
-Edit `.env` and add your Tavily API key:
+Edit `.env` and add your API keys:
 ```
-TAVILY_API_KEY=your-api-key-here
+TAVILY_API_KEY=your-tavily-api-key-here
+SEMANTIC_SCHOLAR_API_KEY=your-semantic-scholar-api-key-here
+OPEN_ALEX_EMAIL=your-email@example.com  # Optional but recommended for better rate limits
 ```
 
 4. Start Ollama server:
@@ -51,10 +54,17 @@ Deep Researcher uses a multi-agent system architecture to provide comprehensive 
 - Uses deepseek-r1:8b model for natural language understanding
 
 ### 2. Literature Search Agent (Literature Manager)
-- Interfaces with Tavily API for academic paper searches
+- Interfaces with multiple academic APIs:
+  - Tavily API for web search-based paper retrieval
+  - Semantic Scholar API for comprehensive academic searches
+  - OpenAlex API for open access-focused literature
+  - ArXiv API for preprints and early research
+  - ChemArXiv API for chemistry-focused research
 - Filters and ranks papers based on relevance
 - Extracts key metadata (authors, year, title)
 - Focuses on academic and research-oriented sources
+- Performs concurrent searches across multiple sources
+- Deduplicates results for a consolidated view
 
 ### 3. Integration Agent (Ollama Client)
 - Synthesizes information from multiple sources
@@ -70,9 +80,9 @@ Deep Researcher uses a multi-agent system architecture to provide comprehensive 
    - Search query generation
 
 2. Search Queries → Literature Search Agent
-   - Academic paper search
-   - Metadata extraction
-   - Relevance ranking
+   - Concurrent searches across multiple academic sources
+   - Metadata extraction and normalization
+   - Result deduplication and relevance ranking
 
 3. Search Results → Integration Agent
    - Information synthesis
@@ -90,10 +100,10 @@ python scripts/test_core_functionality.py
 The script will:
 1. Check if all required components are set up correctly
 2. Initialize the Ollama client with the deepseek-r1:8b model
-3. Set up the literature manager for academic paper searches
+3. Set up the literature manager with multiple academic APIs
 4. Allow you to input a research query or use the default one
 5. Generate an initial response
-6. Search for relevant papers
+6. Search for relevant papers across multiple sources
 7. Integrate the findings into a final summary
 8. Save the results to `outputs/research_output.txt`
 
@@ -115,12 +125,17 @@ Found Papers:
 Title: Advances in single-cell RNA sequencing and its applications in cancer research
 Authors: Smith J., Johnson M., et al.
 Year: 2023
-Source: Tavily
+Source: ArXiv
 
 Title: Integration of spatial transcriptomics with scRNA-seq in tumor analysis
 Authors: Zhang L., Williams K., et al.
 Year: 2023
-Source: Tavily
+Source: Semantic Scholar
+
+Title: Machine learning approaches for single-cell RNA-seq data analysis in cancer
+Authors: Chen H., Wang X., et al.
+Year: 2022
+Source: OpenAlex
 
 [Additional papers...]
 
@@ -140,7 +155,7 @@ Citations:
 ## System Components
 
 - **Ollama Client**: Uses the `deepseek-r1:8b` model with a temperature of 0.3 for focused and consistent responses
-- **Literature Manager**: Interfaces with Tavily API for academic paper searches
+- **Literature Manager**: Interfaces with multiple academic APIs for comprehensive literature search
 - **Prompt Engineer**: Processes queries and integrates literature findings
 
 ## Future Development
@@ -191,9 +206,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
    - Verify the model is downloaded (will be automatic on first run)
 
 2. **API Issues**
-   - Verify your Tavily API key is correctly set in `.env`
+   - Verify your API keys are correctly set in `.env`
    - Check your internet connection
    - Ensure you're not hitting API rate limits
+   - For rate limit issues, consider spreading searches across different sources
 
 ## License
 

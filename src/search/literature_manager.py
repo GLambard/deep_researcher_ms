@@ -1,23 +1,34 @@
 """
-Literature search manager using Tavily API.
+Literature search manager for various academic APIs.
 
 This module implements a manager for academic literature searches
-using the Tavily API. It provides a centralized interface for
-searching, tracking, and deduplicating academic papers.
+using multiple sources including Tavily API, OpenAlex, arXiv, and ChemRxiv.
+It provides a centralized interface for searching, tracking, and 
+deduplicating academic papers across different academic databases.
 """
 
 import os  # For accessing environment variables
-from typing import List, Dict, Any, Optional, Set  # For type hints
+from typing import List, Dict, Any, Optional, Set, Union, Tuple  # For type hints
+import asyncio  # For asynchronous operations
 from .tavily import TavilyAPI  # API client for Tavily search engine
 from .paper import Paper  # Paper data model
 
+# Import the adapter classes from the adapters package
+from adapters.semantic_scholar import SemanticScholarAdapter
+from adapters.open_alex import OpenAlexAdapter
+from adapters.arxiv import ArXivAdapter
+from adapters.chemrxiv import ChemRxivAdapter
+
+# Import the common models
+from common.models import QueryParams
+
 class LiteratureManager:
     """
-    Manages literature search using Tavily API.
+    Manages literature search using multiple API sources.
     
     This class acts as a facade for performing academic literature searches,
     handling tasks such as:
-    1. Interfacing with the Tavily API for paper retrieval
+    1. Interfacing with multiple academic APIs for paper retrieval
     2. Deduplicating papers across multiple searches
     3. Tracking search history
     4. Providing usage statistics
@@ -28,40 +39,53 @@ class LiteratureManager:
         Initialize the literature manager.
         
         Sets up:
-        1. The Tavily API client with the API key from environment variables
+        1. All API clients with their API keys from environment variables
         2. A set to track previously seen papers (for deduplication)
         3. A list to track search history
         """
-        # Get API key from environment variables (should be set in .env file)
-        api_key = os.getenv('TAVILY_API_KEY')
-        # Initialize the Tavily API client
-        self.tavily = TavilyAPI(api_key=api_key)
+        # Get API keys from environment variables
+        tavily_api_key = os.getenv('TAVILY_API_KEY')
+        # semantic_scholar_api_key = os.getenv('SEMANTIC_SCHOLAR_API_KEY')
+        
+        # Initialize the API clients
+        self.tavily = TavilyAPI(api_key=tavily_api_key)
+        
+        # Initialize the adapter classes
+        # self.semantic_scholar = SemanticScholarAdapter(api_key=semantic_scholar_api_key)
+        self.open_alex = OpenAlexAdapter(email=os.getenv('OPEN_ALEX_EMAIL', ''))
+        self.arxiv = ArXivAdapter()
+        self.chemrxiv = ChemRxivAdapter()
+        
         # Set to track papers we've seen (using paper hashes)
         # This prevents duplicates across multiple searches
         self.seen_papers: Set[str] = set()  # Track paper hashes
+        
         # List to store history of all searches performed
         self.search_history: List[Dict] = []
     
-    def search(
+    async def search(
         self,
         query: str,
         max_papers: int = 10,
-        year_range: Optional[tuple] = None
+        year_range: Optional[Tuple[int, int]] = None,
+        sources: Optional[List[str]] = None
     ) -> List[Paper]:
         """
-        Search for academic papers using Tavily API.
+        Search for academic papers using all available sources.
         
         This method:
-        1. Calls the Tavily API with the specified query parameters
-        2. Deduplicates results against previously seen papers
+        1. Calls multiple APIs with the specified query parameters
+        2. Combines and deduplicates results from all sources
         3. Updates search history for tracking
         4. Handles errors gracefully
         
         Parameters:
         -----------
         query: The search query string for finding relevant papers
-        max_papers: Maximum number of papers to return (default: 10)
+        max_papers: Maximum number of papers to return from each source (default: 10)
         year_range: Optional tuple of (start_year, end_year) for filtering papers by publication date
+        sources: Optional list of sources to use (e.g., ["tavily", "semantic_scholar", "arxiv"])
+                If None, all available sources will be used
             
         Returns:
         --------
@@ -69,32 +93,263 @@ class LiteratureManager:
               Empty list if search fails or no results found
         """
         try:
-            # Perform the search using Tavily API
-            papers = self.tavily.search(
-                query=query,
-                limit=max_papers,
-                year_range=year_range
-            )
+            # Map of source keys to search functions
+            source_map = {
+                "tavily": self._search_tavily,
+                #"semantic_scholar": self._search_semantic_scholar,
+                "open_alex": self._search_open_alex,
+                "arxiv": self._search_arxiv,
+                "chemrxiv": self._search_chemrxiv
+            }
+            
+            # Determine which sources to use
+            if sources is None:
+                # Default to all sources
+                sources = list(source_map.keys())
+            
+            # Create a list of tasks for concurrent execution
+            tasks = []
+            for source in sources:
+                if source in source_map:
+                    # Add search task to the list
+                    search_func = source_map[source]
+                    tasks.append(search_func(query, max_papers, year_range))
+            
+            # Execute all search tasks concurrently
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results, excluding any that resulted in exceptions
+            all_papers = []
+            for i, result in enumerate(results):
+                # Skip exceptions
+                if isinstance(result, Exception):
+                    print(f"Search error in {sources[i]}: {result}")
+                    continue
+                
+                # Add papers to our combined list
+                all_papers.extend(result)
             
             # Remove duplicate papers that we've seen before
-            # This is important when performing multiple related searches
-            unique_papers = self._remove_duplicates(papers)
+            unique_papers = self._remove_duplicates(all_papers)
             
             # Track this search in our history
-            # This helps with generating statistics and debugging
             self.search_history.append({
                 "query": query,
                 "total_results": len(unique_papers),
-                "api_used": "tavily"
+                "sources_used": sources
             })
             
             return unique_papers
             
         except Exception as e:
             # Handle any errors that occur during the search
-            # This ensures a failed search doesn't crash the application
             print(f"Search failed: {e}")
             return []  # Return empty list on failure
+    
+    async def _search_tavily(
+        self, 
+        query: str, 
+        max_papers: int, 
+        year_range: Optional[Tuple[int, int]]
+    ) -> List[Paper]:
+        """
+        Search for papers using the Tavily API.
+        
+        Parameters:
+        -----------
+        query: The search query string
+        max_papers: Maximum number of papers to return
+        year_range: Optional tuple of (start_year, end_year)
+            
+        Returns:
+        --------
+        list: List of Paper objects
+        """
+        # Call the synchronous Tavily API
+        return self.tavily.search(
+            query=query,
+            limit=max_papers,
+            year_range=year_range
+        )
+    
+    async def _search_semantic_scholar(
+        self, 
+        query: str, 
+        max_papers: int, 
+        year_range: Optional[Tuple[int, int]]
+    ) -> List[Paper]:
+        """
+        Search for papers using the Semantic Scholar API.
+        
+        Parameters:
+        -----------
+        query: The search query string
+        max_papers: Maximum number of papers to return
+        year_range: Optional tuple of (start_year, end_year)
+            
+        Returns:
+        --------
+        list: List of Paper objects
+        """
+        # Create query parameters for the adapter
+        params = QueryParams(
+            keywords=query,
+            limit=max_papers,
+            year=f"{year_range[0]}-{year_range[1]}" if year_range else None
+        )
+        
+        # Search using the adapter
+        results = await self.semantic_scholar.search_papers(params)
+        
+        # Convert from PaperMetadata to Paper objects
+        papers = []
+        for metadata in results.papers:
+            paper = Paper(
+                title=metadata.title,
+                abstract=metadata.abstract or "",
+                authors=[author.name for author in metadata.authors],
+                year=metadata.year,
+                doi=metadata.doi,
+                url=metadata.url,
+                source_api="semantic_scholar"
+            )
+            papers.append(paper)
+            
+        return papers
+    
+    async def _search_open_alex(
+        self, 
+        query: str, 
+        max_papers: int, 
+        year_range: Optional[Tuple[int, int]]
+    ) -> List[Paper]:
+        """
+        Search for papers using the OpenAlex API.
+        
+        Parameters:
+        -----------
+        query: The search query string
+        max_papers: Maximum number of papers to return
+        year_range: Optional tuple of (start_year, end_year)
+            
+        Returns:
+        --------
+        list: List of Paper objects
+        """
+        # Create query parameters for the adapter
+        params = QueryParams(
+            keywords=query,
+            limit=max_papers,
+            year=f"{year_range[0]}-{year_range[1]}" if year_range else None
+        )
+        
+        # Search using the adapter
+        results = await self.open_alex.search_papers(params)
+        
+        # Convert from PaperMetadata to Paper objects
+        papers = []
+        for metadata in results.papers:
+            paper = Paper(
+                title=metadata.title,
+                abstract=metadata.abstract or "",
+                authors=[author.name for author in metadata.authors],
+                year=metadata.year,
+                doi=metadata.doi,
+                url=metadata.url,
+                source_api="open_alex"
+            )
+            papers.append(paper)
+            
+        return papers
+    
+    async def _search_arxiv(
+        self, 
+        query: str, 
+        max_papers: int, 
+        year_range: Optional[Tuple[int, int]]
+    ) -> List[Paper]:
+        """
+        Search for papers using the arXiv API.
+        
+        Parameters:
+        -----------
+        query: The search query string
+        max_papers: Maximum number of papers to return
+        year_range: Optional tuple of (start_year, end_year)
+            
+        Returns:
+        --------
+        list: List of Paper objects
+        """
+        # Create query parameters for the adapter
+        params = QueryParams(
+            keywords=query,
+            limit=max_papers,
+            year=f"{year_range[0]}-{year_range[1]}" if year_range else None
+        )
+        
+        # Search using the adapter
+        results = await self.arxiv.search_papers(params)
+        
+        # Convert from PaperMetadata to Paper objects
+        papers = []
+        for metadata in results.papers:
+            paper = Paper(
+                title=metadata.title,
+                abstract=metadata.abstract or "",
+                authors=[author.name for author in metadata.authors],
+                year=metadata.year,
+                doi=metadata.doi,
+                url=metadata.url,
+                source_api="arxiv"
+            )
+            papers.append(paper)
+            
+        return papers
+    
+    async def _search_chemrxiv(
+        self, 
+        query: str, 
+        max_papers: int, 
+        year_range: Optional[Tuple[int, int]]
+    ) -> List[Paper]:
+        """
+        Search for papers using the ChemRxiv API.
+        
+        Parameters:
+        -----------
+        query: The search query string
+        max_papers: Maximum number of papers to return
+        year_range: Optional tuple of (start_year, end_year)
+            
+        Returns:
+        --------
+        list: List of Paper objects
+        """
+        # ChemRxiv adapter requires a string query rather than QueryParams
+        # So we'll handle it differently
+        year_filter = {}
+        if year_range:
+            year_filter["year"] = year_range[0]  # ChemRxiv only supports single year filtering
+            
+        # Search using the adapter with the query string and additional parameters
+        results = await self.chemrxiv.search_papers(query, page=1, per_page=max_papers, **year_filter)
+        
+        # Convert from PaperMetadata to Paper objects
+        papers = []
+        for metadata in results.papers:
+            paper = Paper(
+                title=metadata.title,
+                abstract=metadata.abstract or "",
+                authors=[author.name for author in metadata.authors],
+                year=metadata.year,
+                doi=metadata.doi,
+                url=metadata.url,
+                source_api="chemrxiv"
+            )
+            papers.append(paper)
+            
+        return papers
     
     def _remove_duplicates(self, papers: List[Paper]) -> List[Paper]:
         """
@@ -106,7 +361,7 @@ class LiteratureManager:
         3. Returns only papers that haven't been seen before
         
         Deduplication is important because:
-        - Different queries may return the same papers
+        - Different sources may return the same papers
         - It prevents information overload for the user
         - It ensures more diverse results overall
         
@@ -144,10 +399,14 @@ class LiteratureManager:
             - total_unique_papers: Number of unique papers found
             - searches_by_api: Breakdown of searches by API used
         """
+        # Count searches by source
+        searches_by_api = {}
+        for search in self.search_history:
+            for source in search["sources_used"]:
+                searches_by_api[source] = searches_by_api.get(source, 0) + 1
+        
         return {
-            "total_searches": len(self.search_history),  # Total number of searches performed
-            "total_unique_papers": len(self.seen_papers),  # Total unique papers found
-            "searches_by_api": {
-                "tavily": len(self.search_history)  # All searches currently use Tavily
-            }
+            "total_searches": len(self.search_history),
+            "total_unique_papers": len(self.seen_papers),
+            "searches_by_api": searches_by_api
         } 

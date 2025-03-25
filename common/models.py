@@ -94,6 +94,8 @@ class QueryParams:
         offset: Pagination offset for retrieving subsequent pages.
         open_access_only: Whether to return only papers with open access PDFs.
         sort_by: Criteria for ordering results.
+        venue: Filter by publication venue (journal or conference).
+        authors: Filter by author names (e.g., "Albert Einstein").
     """
     keywords: Optional[str] = None
     year: Optional[Union[int, str]] = None  # Can be specific year or range like "2020-2023"
@@ -102,6 +104,8 @@ class QueryParams:
     offset: int = 0
     open_access_only: bool = False
     sort_by: Optional[str] = None  # e.g., "relevance", "date", "citations"
+    venue: Optional[str] = None  # e.g., "Nature", "Science", "arXiv"
+    authors: Optional[str] = None  # Author name filter
     
     def to_dict(self) -> Dict[str, Any]:
         """
