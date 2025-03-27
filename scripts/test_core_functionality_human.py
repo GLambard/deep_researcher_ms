@@ -185,7 +185,8 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         print("\n[STEP 6-8] Integrating literature findings...")
         final_response = prompt_engineer.integrate_literature(
             initial_response=initial_response,
-            papers=all_papers
+            papers=all_papers,
+            query=query  # Pass the original query for strong domain anchoring
         )
         
         # Output final results
