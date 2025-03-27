@@ -118,7 +118,7 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         
         # Break down the query into components
         print("\n[STEP 3] Breaking down query into components...")
-        components = prompt_engineer.process_query(query)
+        components = prompt_engineer.process_query(research_def)
         for comp in components:
             print(f"\nTopic: {comp.topic}")
             for sub in comp.subtopics:
@@ -134,17 +134,16 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         
         # Generate search queries
         print("\n[STEP 3] Generating search queries...")
-        search_queries = prompt_engineer.generate_search_queries(components)
+        search_queries = prompt_engineer.generate_search_queries(query, initial_response, max_queries=3)
         print("Search queries:")
-        for q in search_queries[:5]:  # Show just first 5 queries if there are many
+        for q in search_queries:  # Show all queries (will be maximum 3 by default)
             print(f"  - {q}")
-        if len(search_queries) > 5:
-            print(f"  - ...and {len(search_queries) - 5} more")
         
         # STEP 3: Initial Search and Retrieval
         print("\n[STEP 3] Searching for papers...")
         all_papers = []
         for i, search_query in enumerate(search_queries):
+            search_query = search_query.replace("\"", "")
             print(f"\nSearching for: '{search_query}' ({i+1}/{len(search_queries)})")
             
             try:

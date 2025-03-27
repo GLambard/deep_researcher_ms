@@ -108,7 +108,7 @@ class PromptEngineer:
                     "inclusion_criteria": ["Recent studies", "Peer-reviewed publications"],
                     "exclusion_criteria": ["Opinion pieces", "Non-English publications"],
                     "key_terms": query.split(),
-                    "time_frame": "2018-2023"
+                    "time_frame": "Undefined"
                 }
         except:
             # Fallback if JSON parsing fails
@@ -117,10 +117,10 @@ class PromptEngineer:
                 "inclusion_criteria": ["Recent studies", "Peer-reviewed publications"],
                 "exclusion_criteria": ["Opinion pieces", "Non-English publications"],
                 "key_terms": query.split(),
-                "time_frame": "2018-2023"
+                "time_frame": "Undefined"
             }
     
-    def identify_sources(self, research_definition: Dict[str, Any]) -> List[str]:
+    def identify_sources(self, research_def: Dict[str, Any]) -> List[str]:
         """
         STEP 2: Identify appropriate sources and databases.
         
@@ -136,9 +136,9 @@ class PromptEngineer:
         """
         # For our implementation, we'll return a fixed list of sources
         # In a real implementation, this could be more dynamic based on the research area
-        return ["arxiv", "semantic_scholar", "open_alex", "chemrxiv"]
+        return ["arxiv", "open_alex", "chemrxiv"] # TODO: Add semantic scholar back in (expensive)
     
-    def process_query(self, query: str) -> List[QueryComponent]:
+    def process_query(self, research_def: Dict[str, Any]) -> List[QueryComponent]:
         """
         Process the query into structured components based on the defined research question.
         
@@ -154,8 +154,6 @@ class PromptEngineer:
         --------
         list: List of QueryComponent objects representing the structured breakdown
         """
-        # Define the research question
-        research_def = self.define_research_question(query)
         
         # Create a prompt to break down the research question into components
         prompt = f"""
@@ -221,31 +219,65 @@ class PromptEngineer:
         
         return components
     
-    def generate_search_queries(self, components: List[QueryComponent]) -> List[str]:
+    def generate_search_queries(self, query: str, initial_response: str, max_queries: int = 3) -> List[str]:
         """
-        STEP 3: Generate search queries based on the research components.
+        STEP 3: Generate search queries based on the initial response.
         
-        This method creates targeted search queries to retrieve relevant articles.
+        This method creates targeted search queries to retrieve relevant articles
+        based on the initial assessment of the research question.
         
         Parameters:
         -----------
-        components: Query components from process_query()
+        initial_response: Initial assessment of the research question
+        max_queries: Maximum number of search queries to generate (default: 3)
             
         Returns:
         --------
         list: List of search queries to use for literature search
         """
-        search_queries = []
+        prompt = f"""
+        Based on this initial research assessment:
         
-        # Process each component to generate search queries
-        for component in components:
-            # Add the main topic as a standalone query
-            search_queries.append(component.topic)
-            
-            # Add queries combining main topic with each subtopic
-            for subtopic in component.subtopics:
-                combined_query = f"{component.topic} {subtopic}"
-                search_queries.append(combined_query)
+        {initial_response}
+        
+        Generate a mximum of {max_queries} search queries to retrieve the most relevant academic papers for the following research question:
+        
+        {query}
+        
+        Each query should:
+        1. Be targeted to a specific and unique aspect of the research question
+        2. Include key technical terms
+        3. Be formatted for academic search engines
+        4. Be concise and to the point
+        
+        Return ONLY the list of search queries, one per line.
+        Example:
+        - "query one"
+        - "query two"
+        - "query three"
+        """
+        
+        response = self.ollama.generate(prompt)
+        
+        # Extract queries from the response
+        search_queries = []
+        for line in response.split('\n'):
+            line = line.strip()
+            # Match lines that start with a number followed by period or parenthesis
+            if line.startswith('- '):
+                # Extract the query text (removing any quotes)
+                query_text = line[2:].strip()
+                if query_text:
+                    search_queries.append(query_text)
+                    
+            # Break if we've reached max queries
+            if len(search_queries) >= max_queries:
+                break
+        
+        # Ensure we have at least one query even if parsing failed
+        if (len(search_queries) == 0) and query:
+            # Create a basic query from the first sentence of the initial response
+            search_queries.append(query)
         
         return search_queries
     
@@ -284,7 +316,8 @@ class PromptEngineer:
         2. Describe current understanding of the topic based on general knowledge
         3. Identify what specific information needs to be obtained from the literature
         4. Outline expected challenges or controversies in the research area
-        
+        5. Be concise and to the point
+
         Your preliminary assessment:
         """
         
