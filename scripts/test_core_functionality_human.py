@@ -10,6 +10,7 @@ to synthesizing findings into a comprehensive answer.
 import os
 import sys
 import time
+import random
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
@@ -157,9 +158,17 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
                 print(f"Found {len(papers)} papers for this query")
                 all_papers.extend(papers)
                 
-                # Small delay to prevent rate limiting
+                # Implement exponential backoff with jitter for rate limiting
                 if i < len(search_queries) - 1:
-                    time.sleep(1)
+                    base_delay = 1.0  # Start with 1 second base delay
+                    max_delay = 8.0   # Maximum delay in seconds
+                    retry_count = i + 1  # Use query index as retry count
+                    jitter = random.uniform(0, 0.5)  # Add random jitter
+                    
+                    # Calculate exponential backoff with jitter (min 1 second, max as specified)
+                    delay = min(base_delay * (2 ** (retry_count - 1)) + jitter, max_delay)
+                    print(f"Waiting {delay:.2f} seconds before next query...")
+                    time.sleep(delay)
                     
             except Exception as e:
                 print(f"Warning: Search failed for query '{search_query}': {e}")
