@@ -26,7 +26,7 @@ class OllamaClient:
     
     def __init__(
         self,
-        model: str = "deepseek-r1:8b",  # Default model optimized for research tasks
+        model: str = "gemma3:4b",  # Default model optimized for research tasks
         temperature: float = 0.3,  # Low temperature for more deterministic responses
         base_url: str = "http://localhost:11434"  # Default Ollama server URL
     ):
