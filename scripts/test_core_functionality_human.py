@@ -14,6 +14,7 @@ import random
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
+import re
 
 # Add the project root to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -316,8 +317,32 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         print(final_response.final_summary)
         
         print("\nCitations:")
+        
+        # Ensure citations are properly formatted and consistent with in-text references
+        
+        # First, extract all citation numbers from the final summary
+        in_text_citations = re.findall(r'\[(\d+)\]', final_response.final_summary)
+        used_citation_numbers = set([int(num) for num in in_text_citations])
+        
+        # Process and write citations
+        citation_dict = {}
+        
         for citation in final_response.citations:
-            print(citation)
+            # Extract the citation number if present
+            num_match = re.match(r'^(\d+)\.\s+', citation)
+            if num_match:
+                num = int(num_match.group(1))
+                # Only include citations that are referenced in the text
+                if num in used_citation_numbers:
+                    citation_dict[num] = citation
+            else:
+                # For unnumbered citations, add them to the end
+                max_num = max(used_citation_numbers) if used_citation_numbers else 0
+                citation_dict[max_num + 1] = f"{max_num + 1}. {citation}"
+        
+        # Write citations in numerical order
+        for num in sorted(citation_dict.keys()):
+            print(f"{citation_dict[num]}")
         
         # Save results to file
         output_dir = Path(__file__).parent.parent / "outputs"
@@ -360,11 +385,36 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             f.write(f"{synthesis}\n\n")
             
             f.write("\n=== STEP 8: Final Synthesis ===\n")
+            f.write("**Part 1: Final Summary**\n\n")
             f.write(f"{final_response.final_summary}\n\n")
             
-            f.write("=== Citations ===\n")
+            f.write("**Part 2: Citations**\n")
+            
+            # Ensure citations are properly formatted and consistent with in-text references
+            
+            # First, extract all citation numbers from the final summary
+            in_text_citations = re.findall(r'\[(\d+)\]', final_response.final_summary)
+            used_citation_numbers = set([int(num) for num in in_text_citations])
+            
+            # Process and write citations
+            citation_dict = {}
+            
             for citation in final_response.citations:
-                f.write(f"{citation}\n")
+                # Extract the citation number if present
+                num_match = re.match(r'^(\d+)\.\s+', citation)
+                if num_match:
+                    num = int(num_match.group(1))
+                    # Only include citations that are referenced in the text
+                    if num in used_citation_numbers:
+                        citation_dict[num] = citation
+                else:
+                    # For unnumbered citations, add them to the end
+                    max_num = max(used_citation_numbers) if used_citation_numbers else 0
+                    citation_dict[max_num + 1] = f"{max_num + 1}. {citation}"
+            
+            # Write citations in numerical order
+            for num in sorted(citation_dict.keys()):
+                f.write(f"{citation_dict[num]}\n")
         
         print(f"\nResults saved to {output_file}")
         

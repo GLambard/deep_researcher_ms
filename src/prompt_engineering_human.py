@@ -392,10 +392,10 @@ class PromptEngineer:
         query: The original user query
         initial_response: The initial research question assessment
         max_queries: Maximum number of queries to generate
-    
+            
         Returns:
         --------
-        list: List of search queries formatted for academic databases
+        list: Search queries formatted for academic databases
         """
         # Extract key terms from the original query - these are our highest priority
         query_terms = []
@@ -418,55 +418,90 @@ class PromptEngineer:
         # Extract research question from initial response
         research_question = self._extract_research_question(initial_response)
         
-        # Create queries based directly on the original query terms
-        direct_query = ' AND '.join([f'"{term}"' for term in query_terms[:3]])
+        # Create a direct query based on the original query terms
+        # If no specific terms found, extract significant words from the research question
+        if not query_terms:
+            # Extract significant words from the research question, avoiding common words
+            common_words = {"and", "or", "the", "in", "on", "at", "by", "for", "with", 
+                           "a", "an", "of", "to", "is", "are", "were", "was", "be", 
+                           "have", "has", "had", "can", "could", "would", "should",
+                           "what", "how", "why", "when", "where", "which", "who", "latest"}
+            
+            significant_words = [word.lower() for word in re.findall(r'\b\w+\b', research_question) 
+                               if word.lower() not in common_words and len(word) > 3]
+            
+            # Use the most significant words from the research question
+            query_terms = significant_words[:5]
         
-        # Create prompts for search query generation
-        prompt = f"""
-        You're preparing search queries for academic databases based on:
+        # Ensure we have at least some query terms
+        if not query_terms:
+            # Fallback to extracting nouns from the query if everything else fails
+            nouns = []
+            for word in query.split():
+                if len(word) > 3 and word.lower() not in {"and", "or", "the", "for", "with", "what", "how"}:
+                    nouns.append(word)
+            
+            if nouns:
+                query_terms = nouns[:5]
+            else:
+                # Absolute last resort - use the first few words of the query
+                query_terms = [word for word in query.split()[:5] if len(word) > 3]
         
-        Original Query: {query}
-        Research Question: {research_question}
-        
-        The most critical terms from the query are: {', '.join(query_terms)}
-        
-        Create {max_queries} different academic database search queries that:
-        1. ALWAYS include the core query terms listed above
-        2. Use proper Boolean operators (AND, OR) with parentheses
-        3. Are formatted for academic databases
-        4. Have different focuses while remaining true to the original query
-        5. Use quoted phrases for exact matches
-        
-        The queries should follow this format:
-        1. ("term1" AND "term2") AND ("term3" OR "term4")
-        2. ("term1" AND "term5") AND ("term6")
-        3. ("term2" AND "term3") AND ("term7" OR "term8")
-        
-        Focus on generating queries that will yield DIRECTLY relevant papers.
-        ALWAYS include the original query terms, then add synonyms or related concepts.
-        """
-        
-        response = self.ollama.generate(prompt)
-        
-        # Parse the response
+        # Create queries based on the query terms
         search_queries = []
         
-        # Extract the search queries from the response
-        lines = response.strip().split('\n')
-        for line in lines:
-            if re.match(r'^\d+\.', line):
-                # This line starts with a number and period, likely a query
-                query_text = re.sub(r'^\d+\.\s*', '', line).strip()
-                if query_text and len(query_text) > 10:  # Basic validation
-                    search_queries.append(query_text)
+        # Ensure we have at least one valid query term
+        if query_terms:
+            # Basic query - combine the main terms with AND
+            direct_query = ' AND '.join([term for term in query_terms[:3]])
+            search_queries.append(direct_query)
+        else:
+            # If we still have no terms, use the entire research question as a fallback
+            search_queries.append(research_question)
         
-        # Add the direct query if it's not already included
-        if direct_query not in search_queries:
-            search_queries.insert(0, direct_query)
+        # Create prompts for additional search query generation
+        if len(query_terms) > 1:
+            prompt = f"""
+            You're preparing search queries for academic databases based on:
+            
+            Original Query: {query}
+            Research Question: {research_question}
+            
+            The most critical terms from the query are: {', '.join(query_terms)}
+            
+            Create {max_queries - 1} different academic database search queries that:
+            1. ALWAYS include the core query terms listed above
+            2. Use proper Boolean operators (AND, OR) with parentheses
+            3. Are formatted for academic databases
+            4. Have different focuses while remaining true to the original query
+            5. Use quoted phrases for exact matches
+            
+            The queries should follow this format:
+            1. ("term1" AND "term2") AND ("term3" OR "term4")
+            2. ("term1" AND "term5") AND ("term6")
+            
+            Focus on generating queries that will yield DIRECTLY relevant papers.
+            ALWAYS include the original query terms, then add synonyms or related concepts.
+            """
+            
+            response = self.ollama.generate(prompt)
+            
+            # Parse the response
+            lines = response.strip().split('\n')
+            for line in lines:
+                if re.match(r'^\d+\.', line):
+                    # This line starts with a number and period, likely a query
+                    query_text = re.sub(r'^\d+\.\s*', '', line).strip()
+                    if query_text and len(query_text) > 10:  # Basic validation
+                        search_queries.append(query_text)
         
-        # Ensure we're using all key terms from the original query
-        if query_terms and not any(all(term.lower() in q.lower() for term in query_terms[:2]) for q in search_queries):
-            search_queries.insert(0, ' AND '.join([f'"{term}"' for term in query_terms[:3]]))
+        # Ensure we have at least one query and not more than max_queries
+        if not search_queries:
+            # Last resort fallback
+            search_queries = [query.replace("?", "")]
+        
+        # Ensure all queries have valid content
+        search_queries = [q for q in search_queries if q and len(q.strip()) > 3]
         
         # Limit to max_queries
         return search_queries[:max_queries]
@@ -983,223 +1018,144 @@ class PromptEngineer:
                 final_summary=initial_response,
                 citations=[]
             )
-
+ 
         # Set current year to 2025 as per the simulation context
         import datetime
+        import re
         current_year = datetime.datetime.now().year
         
         # Extract research question from the initial response
         research_question = self._extract_research_question(initial_response)
         
+        # Filter papers to ensure they match the time frame if specified in the research question
+        time_frame_match = re.search(r'(\d{4})[-–](\d{4})', research_question)
+        filtered_papers = papers
+        
+        if time_frame_match:
+            start_year, end_year = map(int, time_frame_match.groups())
+            # Filter papers by publication year
+            filtered_papers = [
+                paper for paper in papers 
+                if paper.year and int(paper.year) >= start_year and int(paper.year) <= end_year
+            ]
+            
+            # If filtering removed all papers, use original set but note the discrepancy
+            if not filtered_papers:
+                filtered_papers = papers
+        
         # Domain anchoring - extract key domain terms explicitly
         domain_terms = []
+        
         if query:
-            domain_terms_prompt = f"""
-            Extract 10-15 key domain-specific technical terms from this query:
-            
-            "{query}"
-            
-            Research Question: {research_question}
-            
-            List specialized terminology related to this field of study, including:
-            1. Main concepts and their variants
-            2. Methodological approaches
-            3. Materials or techniques mentioned
-            4. Application domains
-            
-            Format your response as a simple list, one term per line (no numbering or bullets).
-            Prioritize specific scientific/technical terms over general words.
-            """
-            domain_terms_response = self.ollama.generate(domain_terms_prompt)
-            domain_terms = [term.strip() for term in domain_terms_response.split('\n') if term.strip()]
+            # Extract domain terms from both query and research question
+            all_text = query + " " + research_question
+            # Get significant words, filter out common words
+            words = [word.lower() for word in re.findall(r'\b\w+\b', all_text)]
+            common_words = {"and", "or", "the", "in", "on", "at", "by", "for", "with", 
+                           "a", "an", "of", "to", "is", "are", "were", "was", "be", 
+                           "have", "has", "had", "can", "could", "would", "should", 
+                           "what", "how", "why", "when", "where", "which", "who"}
+            domain_terms = [word for word in words if word not in common_words]
+            # Keep only terms that appear in at least 30% of paper titles or abstracts
+            if filtered_papers:
+                domain_terms = [
+                    term for term in domain_terms
+                    if sum(1 for p in filtered_papers if term.lower() in p.title.lower() or term.lower() in p.abstract.lower())
+                    >= 0.3 * len(filtered_papers)
+                ]
         
-        # Create a richer domain context by combining multiple terms with proper Boolean operators
-        if domain_terms:
-            # Group terms into categories for a structured search
-            main_concepts = domain_terms[:3]  # First 3 terms are likely main concepts
-            secondary_concepts = domain_terms[3:6]  # Next few are likely secondary concepts
+        # Key paper information for reasoning
+        paper_info = []
+        for i, paper in enumerate(filtered_papers):
+            paper_info.append(f"Paper {i}: {paper.title} ({paper.year})")
             
-            # Create a structured query combining these groups
-            if len(main_concepts) >= 2 and len(secondary_concepts) >= 1:
-                domain_context = f"({' AND '.join(main_concepts)}) AND ({' OR '.join(secondary_concepts)})"
-            elif main_concepts:
-                domain_context = " AND ".join(main_concepts)
-            else:
-                domain_context = query or research_question
-        else:
-            domain_context = query or research_question
+        # Hierarchical analysis for deeper synthesis
         
-        # Important: Use all papers that have already gone through title/abstract screening
-        # Skip additional relevance filtering since papers have already been screened
-        relevant_papers = papers
-        
-        print(f"Using all {len(papers)} papers that passed title and abstract screening")
-        
-        # Track paper usage to ensure all papers are considered
-        paper_usage = {i: {"used": False, "relevance": 0} for i in range(len(relevant_papers))}
-        
-        # Extract key findings from papers with paper identifiers
-        findings_with_metadata = {}
-        for i, paper in enumerate(relevant_papers):
-            # Create a unique ID for each paper
+        # First, basic findings extraction from each paper
+        findings = {}
+        for i, paper in enumerate(filtered_papers):
             paper_id = f"paper_{i}"
             
-            # Extract findings with focused prompt
+            # Generate analysis prompt for this paper
             prompt = f"""
-            Extract key findings and information from this paper:
-            
-            Title: {paper.title}
-            Authors: {', '.join(paper.authors)}
-            Year: {paper.year if paper.year else 'Unknown'}
-            Abstract: {paper.abstract}
-            
-            Extract:
-            1. The main methodology used
-            2. Key results or findings
-            3. Limitations mentioned
-            4. Implications or applications
-            
-            Format each finding as: "- [Finding description]"
-            Be specific and concise. Include numbers, statistics, or concrete findings when available.
-            Avoid vague generalizations.
-            """
-            
-            response = self.ollama.generate(prompt)
-            
-            # Store findings along with paper metadata
-            findings = [line.strip()[2:].strip() for line in response.split("\n") 
-                       if line.strip() and line.strip().startswith("-")]
-            
-            findings_with_metadata[paper_id] = {
-                "paper": paper,
-                "findings": findings
-            }
-        
-        # Format findings for synthesis
-        findings_for_synthesis = {}
-        for paper_id, data in findings_with_metadata.items():
-            findings_for_synthesis[paper_id] = data["findings"]
-        
-        # Assess methodology quality for better synthesis
-        methodology_assessments = self.assess_methodology_quality(relevant_papers)
-        
-        # STEP 7: Synthesize findings with domain context
-        synthesis = self.synthesize_findings_with_domain(
-            findings_for_synthesis, 
-            research_question, 
-            domain_context, 
-            query
-        )
-        
-        # Extract citation keys from synthesis
-        cited_paper_ids = []
-        for paper_id in findings_with_metadata.keys():
-            if f"[{paper_id}]" in synthesis:
-                cited_paper_ids.append(paper_id)
-                paper_usage[int(paper_id.split('_')[1])]["used"] = True
-        
-        # If papers weren't cited, create a supplementary synthesis
-        if len(cited_paper_ids) < len(findings_with_metadata) // 2:
-            # Create a prompt to integrate uncited papers
-            uncited_papers = [paper_id for paper_id in findings_with_metadata.keys() if paper_id not in cited_paper_ids]
-            
-            if uncited_papers:
-                uncited_findings = {}
-                for paper_id in uncited_papers:
-                    uncited_findings[paper_id] = findings_with_metadata[paper_id]["findings"]
-                
-                supplementary_synthesis = self.synthesize_findings_with_domain(
-                    uncited_findings,
-                    research_question,
-                    domain_context,
-                    query
-                )
-                
-                # Add the supplementary synthesis
-                synthesis += "\n\n" + supplementary_synthesis
-                
-                # Update cited papers
-                for paper_id in uncited_papers:
-                    if f"[{paper_id}]" in supplementary_synthesis:
-                        cited_paper_ids.append(paper_id)
-                        paper_usage[int(paper_id.split('_')[1])]["used"] = True
-        
-        # Prepare detailed paper information for citation formatting
-        papers_for_citation = []
-        for paper_id in findings_with_metadata.keys():  # Include ALL papers in citations
-            paper_data = findings_with_metadata[paper_id]
-            paper = paper_data["paper"]
-            
-            # Extract journal/venue information with a more comprehensive approach
-            venue_prompt = f"""
-            As a scientific reference librarian, determine the most likely publication venue (journal or conference) for this paper:
+            Analyze this scientific paper, focusing on its most significant findings and contributions:
             
             Title: {paper.title}
             Authors: {', '.join(paper.authors)}
             Year: {paper.year}
             Abstract: {paper.abstract}
             
-            Based on the title, look for words that might indicate the journal or conference.
-            Consider these clues:
-            1. Words like "Journal", "Proceedings", "Conference", "Transactions" in the title
-            2. Subject matter that matches known journals in the field
-            3. Specific formatting or naming patterns common to certain venues
+            Extract 3-5 key findings from this paper. Focus on:
+            1. Main results and conclusions
+            2. Methodological approaches used
+            3. Limitations acknowledged
+            4. How this relates to the research question: "{research_question}"
             
-            If you can identify a likely venue name, provide it. Otherwise, look at keywords in the title and suggest 
-            a relevant journal in that field. For example:
-            - For AI: "IEEE Transactions on Neural Networks and Learning Systems"
-            - For materials science: "Advanced Materials" or "Journal of Materials Science"
-            - For architecture: "Building and Environment" or "Architectural Science Review"
-            - For chemistry: "Journal of Chemical Physics" or "Chemical Communications"
+            For each finding, write a 1-2 sentence summary that captures the essence of what was discovered.
+            Ensure each finding is specific and directly tied to evidence provided in the paper.
             
-            Return ONLY the venue name without any other text. If completely uncertain, return "Unknown".
+            Format your response as a simple list of findings, one per line.
             """
             
-            venue_response = self.ollama.generate(venue_prompt).strip()
-            venue = venue_response if venue_response and "unknown" not in venue_response.lower() else "Unknown"
+            # Extract findings
+            response = self.ollama.generate(prompt)
             
-            # Extract volume and issue information if available
-            volume_issue_prompt = f"""
-            Extract any potential volume and issue information from this paper:
+            # Process response into list of findings
+            paper_findings = [
+                line.strip().strip('•-*').strip()
+                for line in response.split('\n')
+                if line.strip() and not line.startswith('#') and not line.startswith('Finding')
+            ]
             
-            Title: {paper.title}
-            Abstract: {paper.abstract}
+            # Filter out any non-finding lines and limit to 5 max
+            paper_findings = [f for f in paper_findings if len(f) > 20 and '.' in f][:5]
             
-            Look for patterns like "Vol. X", "Volume X", "Issue Y", or "Number Y" in the text.
-            Return ONLY in the format: "volume:X issue:Y" if found, otherwise return "unknown".
-            """
-            
-            volume_issue_info = self.ollama.generate(volume_issue_prompt).strip().lower()
-            
-            # Parse volume and issue
-            volume = "Unknown"
-            issue = "Unknown"
-            
-            if "volume:" in volume_issue_info and volume_issue_info != "unknown":
-                try:
-                    volume_match = re.search(r"volume:(\d+)", volume_issue_info)
-                    if volume_match:
-                        volume = volume_match.group(1)
-                except:
-                    pass
-                    
-            if "issue:" in volume_issue_info and volume_issue_info != "unknown":
-                try:
-                    issue_match = re.search(r"issue:(\d+)", volume_issue_info)
-                    if issue_match:
-                        issue = issue_match.group(1)
-                except:
-                    pass
-            
-            papers_for_citation.append({
-                "id": paper_id,
-                "title": paper.title,
-                "authors": paper.authors,
-                "year": paper.year,
-                "venue": venue,
-                "volume": volume,
-                "issue": issue
-            })
+            if paper_findings:
+                findings[paper_id] = paper_findings
+                
+        # Next, find interrelationships between papers
+        synthesis = self.synthesize_findings_with_domain(
+            findings,
+            research_question,
+            domain_context=" ".join(domain_terms),
+            query=query
+        )
+        
+        # Identify papers suitable for citation (those with findings)
+        findings_with_metadata = {}
+        
+        # Add metadata for papers with findings
+        for i, paper in enumerate(filtered_papers):
+            paper_id = f"paper_{i}"
+            if paper_id in findings:
+                # Clean journal/venue name
+                venue = paper.venue if paper.venue and str(paper.venue).lower() != "none" else ""
+                
+                # Process volume and issue - Paper class doesn't have these attributes
+                # So set them as empty strings by default
+                volume = ""
+                issue = ""
+                
+                # Add to citation-ready papers
+                findings_with_metadata[paper_id] = {
+                    "id": paper_id,
+                    "title": paper.title,
+                    "authors": paper.authors,
+                    "year": paper.year if paper.year else "2025",
+                    "venue": venue,
+                    "volume": volume,
+                    "issue": issue
+                }
+        
+        # Gather papers with findings to be used for citation
+        papers_for_citation = []
+        relevant_papers = []
+        
+        for i, paper in enumerate(filtered_papers):
+            paper_id = f"paper_{i}"
+            if paper_id in findings_with_metadata:
+                papers_for_citation.append(findings_with_metadata[paper_id])
+                relevant_papers.append(paper)
         
         # Format citation information for the prompt
         citation_info = "\n\n".join([
@@ -1248,38 +1204,107 @@ class PromptEngineer:
            - For papers with a specified journal but no volume/issue, use: A. Author et al., "Title," Journal, Year.
            - NEVER insert the placeholder text "Unknown" in citations
            - NEVER include non-existent page numbers or use "pp. Z" as a placeholder
+           - Each citation must be UNIQUE - never repeat the same citation multiple times
+           - Number citations sequentially as [1], [2], etc. with each paper having exactly ONE citation entry
+           - Use the ACTUAL information from the papers, not placeholder text like "A. Author"
+           - IMPORTANT: Format the authors' names correctly (Last name, First initial.)
+           - MOST IMPORTANT: Keep the numbering consistent between in-text citations and the reference list
         
         Provide your response in two parts:
         1. Final Summary (with in-text citations using paper IDs)
-        2. Citations (in IEEE format)
+        2. Citations (in IEEE format, with each citation appearing exactly once)
         
-        The final summary MUST focus specifically on addressing the original research question about {query}.
+        MOST IMPORTANT INSTRUCTION: The final summary MUST focus specifically on addressing the original research question about {query or research_question}.
         Ensure all papers are cited at least once in the summary.
+        
+        ADDITIONAL IMPORTANT INSTRUCTIONS:
+        - In your final summary, when you refer to papers, use numerical references that match the citation list (e.g., [1], [2], etc.)
+        - Make sure that if a paper is numbered [1] in your "Part 2: Citations" list, it's also numbered [1] in your "Part 1: Final Summary"
+        - Keep your citation numbering consistent throughout both sections
+        - AVOID long series of references like [1, 2, 3, 4, 5] - group only when critically necessary
+        - For each citation in Part 2, include the COMPLETE paper information based on what's provided
+        - If the papers don't directly address the research question, you MUST relate their findings to the research question by drawing appropriate connections
+        - The final summary must be a direct answer to the original research question, even if that requires interpreting how the paper findings relate to the question
+        - Make sure to begin your summary with a clear statement addressing the original research question
+        - If the papers focus on a different domain (e.g., biomedical) than the research question (e.g., architecture), explicitly discuss how principles from one domain can be transferred to the other
+        - Acknowledge any limitations in addressing the research question based on the available papers
+        
+        MOST IMPORTANT: When creating the citations section, use the ACTUAL paper information:
+        - For paper_0, use the title "{papers_for_citation[0]['title'] if len(papers_for_citation) > 0 else 'No title'}" by {', '.join(papers_for_citation[0]['authors']) if len(papers_for_citation) > 0 else 'No authors'} ({papers_for_citation[0]['year'] if len(papers_for_citation) > 0 else '2023'})
+        - For paper_1, use the title "{papers_for_citation[1]['title'] if len(papers_for_citation) > 1 else 'No title'}" by {', '.join(papers_for_citation[1]['authors']) if len(papers_for_citation) > 1 else 'No authors'} ({papers_for_citation[1]['year'] if len(papers_for_citation) > 1 else '2023'})
+        - For paper_2, use the title "{papers_for_citation[2]['title'] if len(papers_for_citation) > 2 else 'No title'}" by {', '.join(papers_for_citation[2]['authors']) if len(papers_for_citation) > 2 else 'No authors'} ({papers_for_citation[2]['year'] if len(papers_for_citation) > 2 else '2023'})
+        - For paper_3, use the title "{papers_for_citation[3]['title'] if len(papers_for_citation) > 3 else 'No title'}" by {', '.join(papers_for_citation[3]['authors']) if len(papers_for_citation) > 3 else 'No authors'} ({papers_for_citation[3]['year'] if len(papers_for_citation) > 3 else '2023'})
         """
         
         response = self.ollama.generate(prompt)
         
-        # Replace paper IDs with citation numbers in the final text
-        final_text = response
-        citation_mapping = {}
+        # Map all paper IDs to citation numbers
+        paper_ids = list(findings_with_metadata.keys())
+        citation_mapping = {paper_id: i+1 for i, paper_id in enumerate(paper_ids)}
         
-        # Map all papers (even uncited ones) to ensure complete citations
-        for i, paper_id in enumerate(findings_with_metadata.keys()):
-            citation_number = i + 1
-            citation_mapping[paper_id] = citation_number
-            final_text = final_text.replace(f"[{paper_id}]", f"[{citation_number}]")
+        # Replace paper IDs with citation numbers consistently
+        final_text = response
+        for paper_id, citation_number in citation_mapping.items():
+            final_text = re.sub(f"\\[{paper_id}\\]", f"[{citation_number}]", final_text)
         
         # Parse the response to separate summary from citations
         parts = final_text.split("Citations:", 1)
+        if len(parts) < 2:
+            parts = final_text.split("Part 2:", 1)
+        
         final_summary = parts[0].strip()
         citations = []
         
         if len(parts) > 1:
-            citations = [
+            # Process citation part to ensure uniqueness and correct numbering
+            raw_citations = [
                 cite.strip()
                 for cite in parts[1].split("\n")
-                if cite.strip()
+                if cite.strip() and not cite.strip().startswith("Part")
             ]
+            
+            # Ensure citations are properly numbered and unique
+            seen_citations = set()
+            numbered_citations = {}
+            
+            for citation in raw_citations:
+                # Extract citation number if present
+                num_match = re.match(r'^\[?(\d+)\]?\.?\s+', citation)
+                if num_match:
+                    num = int(num_match.group(1))
+                    citation_text = re.sub(r'^\[?(\d+)\]?\.?\s+', '', citation).strip()
+                    
+                    # Skip if we've already seen this citation
+                    if citation_text in seen_citations:
+                        continue
+                    
+                    seen_citations.add(citation_text)
+                    numbered_citations[num] = citation_text
+                else:
+                    # For unnumbered citations, add them with a high number to process later
+                    citation_text = citation.strip()
+                    if citation_text not in seen_citations:
+                        seen_citations.add(citation_text)
+                        numbered_citations[100 + len(numbered_citations)] = citation_text
+            
+            # Create final numbered citations in order
+            for i, paper_id in enumerate(paper_ids):
+                num = i + 1
+                if num in numbered_citations:
+                    citations.append(f"{num}. {numbered_citations[num]}")
+                elif i < len(papers_for_citation):
+                    # Generate citation from paper data if missing
+                    paper_data = papers_for_citation[i]
+                    citations.append(self._generate_citation_from_paper(num, paper_data))
+        
+        # If citations still contain placeholder text or are empty, generate proper citations from papers data
+        if len(citations) == 0 or any("A. Author" in cite for cite in citations):
+            # Generate proper IEEE citations from paper data
+            citations = []
+            for i, paper_id in enumerate(paper_ids):
+                if i < len(papers_for_citation):
+                    paper_data = papers_for_citation[i]
+                    citations.append(self._generate_citation_from_paper(i+1, paper_data))
         
         return ResearchResponse(
             initial_response=initial_response,
@@ -1287,6 +1312,64 @@ class PromptEngineer:
             final_summary=final_summary,
             citations=citations
         )
+    
+    def _generate_citation_from_paper(self, number: int, paper_data: Dict[str, Any]) -> str:
+        """
+        Generate a properly formatted citation from paper data.
+        
+        Parameters:
+        -----------
+        number: Citation number to use
+        paper_data: Dictionary containing paper metadata
+            
+        Returns:
+        --------
+        str: Formatted citation
+        """
+        authors = paper_data.get("authors", [])
+        title = paper_data.get("title", "")
+        venue = paper_data.get("venue", "")
+        year = paper_data.get("year", "2023")
+        
+        # Format author names according to IEEE style
+        if len(authors) == 1:
+            # Handle single author
+            parts = authors[0].split()
+            if len(parts) > 1:
+                author_text = f"{parts[-1]} {parts[0][0]}."
+            else:
+                author_text = authors[0]
+        elif len(authors) == 2:
+            # Handle two authors
+            parts1 = authors[0].split()
+            parts2 = authors[1].split()
+            
+            if len(parts1) > 1:
+                author1 = f"{parts1[-1]} {parts1[0][0]}."
+            else:
+                author1 = authors[0]
+                
+            if len(parts2) > 1:
+                author2 = f"{parts2[-1]} {parts2[0][0]}."
+            else:
+                author2 = authors[1]
+                
+            author_text = f"{author1} and {author2}"
+        else:
+            # Handle three or more authors
+            parts = authors[0].split()
+            if len(parts) > 1:
+                author_text = f"{parts[-1]} {parts[0][0]}. et al."
+            else:
+                author_text = f"{authors[0]} et al."
+        
+        # Create citation string
+        if venue:
+            citation = f"{number}. {author_text}, \"{title},\" {venue}, {year}."
+        else:
+            citation = f"{number}. {author_text}, \"{title},\" {year}."
+        
+        return citation
     
     def synthesize_findings_with_domain(self, findings: Dict[str, List[str]], research_question: str, domain_context: str = "", query: str = None) -> str:
         """
@@ -1502,7 +1585,8 @@ class PromptEngineer:
         Generate refined search queries based on the initial papers found.
         
         This implements a human-like approach where researchers adjust their search
-        strategy based on what they found in initial papers.
+        strategy based on what they found in initial papers, while ensuring
+        alignment with the original research question.
         
         Parameters:
         -----------
@@ -1515,97 +1599,109 @@ class PromptEngineer:
         """
         if not initial_papers:
             return []
-            
-        # Extract specialized terminology from the papers first
+        
+        # First, extract key terms from the research question to maintain focus
+        research_terms_prompt = f"""
+        Extract 5-7 key technical terms that are CENTRAL to this research question:
+        
+        {research_question}
+        
+        Return ONLY a comma-separated list of the most important technical terms and concepts.
+        These terms will be used to ensure search queries stay on topic.
+        """
+        
+        research_terms_response = self.ollama.generate(research_terms_prompt)
+        research_terms = [term.strip() for term in research_terms_response.split(',') if term.strip()]
+        
+        # Ensure we have at least some research terms
+        if not research_terms:
+            research_terms = [term for term in research_question.split() 
+                             if len(term) > 4 and term.lower() not in ['what', 'where', 'when', 'which', 'there', 'their', 'about', 'would', 'could', 'should', 'utilize', 'utilized']]
+        
+        # Extract specialized terminology from the papers
         specialized_terms = self.extract_specialized_terminology(initial_papers)
         
-        # Identify the key themes from the abstracts
+        # Identify potentially relevant methods, materials and concepts from the papers
         papers_info = "\n\n".join([
             f"Paper {i+1}:\nTitle: {paper.title}\nAbstract: {paper.abstract}"
             for i, paper in enumerate(initial_papers[:5])  # Limit to first 5 papers for manageability
         ])
         
-        # Extract key methods, materials, and applications from the papers
-        extraction_prompt = f"""
-        Analyze these papers related to the research question:
+        # Validate potential terms against the original research question
+        validation_prompt = f"""
+        The original research question is: "{research_question}"
         
-        Research Question: {research_question}
+        The key terms from this research question are: {', '.join(research_terms)}
         
-        Based on the titles and abstracts, extract:
-        1. SPECIFIC methods/techniques mentioned (e.g., "attention mechanism", "conformal prediction")
-        2. SPECIFIC materials or domains discussed (e.g., "perovskite solar cells", "metal-organic frameworks")
-        3. SPECIFIC applications targeted (e.g., "drug discovery", "battery design")
-        4. SPECIFIC performance metrics used (e.g., "prediction accuracy", "uncertainty calibration")
+        Based on initial papers, I've extracted these specialized terms: {', '.join(specialized_terms)}
         
-        For each category, list the 3-5 most important terms found across the papers.
+        Please identify which of these specialized terms are DIRECTLY RELEVANT to the original research question.
+        For each term, respond with YES or NO followed by brief justification.
         
-        Papers:
-        {papers_info}
+        Format: 
+        Term: [term] | Relevant: [YES/NO] | Reason: [brief explanation]
         
-        Format your response as:
-        
-        METHODS: [comma-separated list]
-        MATERIALS: [comma-separated list]
-        APPLICATIONS: [comma-separated list]
-        METRICS: [comma-separated list]
+        Be strict - only mark terms as relevant if they directly relate to the original research question.
         """
         
-        extraction_response = self.ollama.generate(extraction_prompt)
+        validation_response = self.ollama.generate(validation_prompt)
         
-        # Parse the extracted terms
-        methods = []
-        materials = []
-        applications = []
-        metrics = []
+        # Extract validated terms
+        validated_terms = []
+        for line in validation_response.split('\n'):
+            if 'Relevant: YES' in line or 'Relevant: yes' in line:
+                term_match = re.search(r'Term:\s*([^|]+)', line)
+                if term_match:
+                    validated_term = term_match.group(1).strip()
+                    if validated_term:
+                        validated_terms.append(validated_term)
         
-        # Extract each category
-        methods_match = re.search(r'METHODS:(.+?)(?=MATERIALS:|APPLICATIONS:|METRICS:|$)', extraction_response, re.DOTALL)
-        if methods_match:
-            methods = [m.strip() for m in methods_match.group(1).split(',') if m.strip()]
+        # Combine validated terms with research terms, ensuring original focus is maintained
+        combined_terms = research_terms.copy()
+        for term in validated_terms:
+            if term not in combined_terms:
+                combined_terms.append(term)
         
-        materials_match = re.search(r'MATERIALS:(.+?)(?=METHODS:|APPLICATIONS:|METRICS:|$)', extraction_response, re.DOTALL)
-        if materials_match:
-            materials = [m.strip() for m in materials_match.group(1).split(',') if m.strip()]
+        # If we didn't get enough validated terms, use the central research terms
+        if len(combined_terms) < 5:
+            # Extract core concepts from research question
+            core_concepts_prompt = f"""
+            Extract 3-5 CORE CONCEPTS from this research question:
+            
+            {research_question}
+            
+            Format as a comma-separated list.
+            """
+            core_concepts_response = self.ollama.generate(core_concepts_prompt)
+            core_concepts = [concept.strip() for concept in core_concepts_response.split(',') if concept.strip()]
+            
+            # Add unique core concepts
+            for concept in core_concepts:
+                if concept not in combined_terms:
+                    combined_terms.append(concept)
         
-        applications_match = re.search(r'APPLICATIONS:(.+?)(?=METHODS:|MATERIALS:|METRICS:|$)', extraction_response, re.DOTALL)
-        if applications_match:
-            applications = [a.strip() for a in applications_match.group(1).split(',') if a.strip()]
-        
-        metrics_match = re.search(r'METRICS:(.+?)(?=METHODS:|MATERIALS:|APPLICATIONS:|$)', extraction_response, re.DOTALL)
-        if metrics_match:
-            metrics = [m.strip() for m in metrics_match.group(1).split(',') if m.strip()]
-        
-        # Create a prompt to generate database search queries
+        # Now generate search queries using these combined terms, always ensuring original research focus
         query_prompt = f"""
-        You're a database search expert helping a researcher refine their search queries.
+        Create 3 search queries for academic databases based on this research question:
         
-        Research Question: {research_question}
+        {research_question}
         
-        Based on initial papers, we've identified these key elements:
-        
-        Methods/Techniques: {', '.join(methods[:5])}
-        Materials/Domains: {', '.join(materials[:5])}
-        Applications: {', '.join(applications[:5])}
-        Metrics: {', '.join(metrics[:5])}
-        Specialized Terminology: {', '.join(specialized_terms[:7])}
-        
-        Generate 3 highly specific academic database search queries that will find NEW relevant papers.
-        Create queries that search for different aspects or combinations of the research question.
+        Use these terms to create focused queries:
+        {', '.join(combined_terms)}
         
         Each query MUST:
-        1. Use proper Boolean operators (AND, OR) with parentheses
-        2. Include specific technical terms from the lists above
-        3. Include a year range filter [2014-2024]
-        4. Focus on retrieving highly relevant papers
-        5. Use standard database search syntax
-        6. Be DIFFERENT from each other (explore different aspects)
+        1. STAY FOCUSED on the original research question
+        2. Use proper Boolean operators (AND, OR) with parentheses
+        3. Include 2-4 terms combined with appropriate operators
+        4. Include a year range filter [2014 TO 2024]
+        5. Be specific enough to return relevant papers
         
-        Format each query as:
+        Format each query on a new line, like this:
         1. (term1 AND term2) AND (term3 OR term4) AND year:[2014 TO 2024]
         2. (term5 AND term6) AND (term7 OR term8) AND year:[2014 TO 2024]
         3. (term9 AND term10) AND (term11 OR term12) AND year:[2014 TO 2024]
         
-        ONLY provide the 3 queries numbered as shown above, with no other text.
+        IMPORTANT: EACH query MUST include at least 2 terms from the original research question to ensure relevance.
         """
         
         response = self.ollama.generate(query_prompt)
@@ -1625,62 +1721,62 @@ class PromptEngineer:
                     if query and ("AND" in query or "OR" in query) and len(query) > 10:
                         refined_queries.append(query)
         
-        # If we don't have enough valid queries, try a different approach
-        if len(refined_queries) < 3:
-            # Combine different aspects from our extracted terms
-            all_terms = []
-            all_terms.extend(methods)
-            all_terms.extend(specialized_terms)
-            all_terms.extend(materials)
-            all_terms.extend(applications)
-            
-            # Remove duplicates
-            all_terms = list(set([term for term in all_terms if term]))
-            
-            if len(all_terms) >= 6:
-                # Create balanced queries
-                if len(refined_queries) < 1 and len(all_terms) >= 2:
-                    refined_queries.append(f"({all_terms[0]} AND {all_terms[1]}) AND year:[2014 TO 2024]")
-                
-                if len(refined_queries) < 2 and len(all_terms) >= 4:
-                    refined_queries.append(f"({all_terms[2]} AND {all_terms[3]}) AND year:[2014 TO 2024]")
-                
-                if len(refined_queries) < 3 and len(all_terms) >= 6:
-                    refined_queries.append(f"({all_terms[4]} AND {all_terms[5]}) AND year:[2014 TO 2024]")
-        
-        # If we still have fewer than 3 queries, add some from the research question itself
-        if len(refined_queries) < 3:
-            # Extract key terms from the research question
-            question_terms = re.findall(r'\b[A-Za-z][A-Za-z-]+\b', research_question)
-            question_terms = [term for term in question_terms if len(term) > 4 and term.lower() not in ['what', 'where', 'when', 'which', 'there', 'their', 'about', 'would', 'could', 'should']]
-            
-            if len(question_terms) >= 4:
-                if len(refined_queries) < 1:
-                    refined_queries.append(f"({question_terms[0]} AND {question_terms[1]}) AND year:[2014 TO 2024]")
-                
-                if len(refined_queries) < 2:
-                    refined_queries.append(f"({question_terms[2]} AND {question_terms[3]}) AND year:[2014 TO 2024]")
-                
-                if len(refined_queries) < 3 and len(question_terms) >= 6:
-                    refined_queries.append(f"({question_terms[4]} AND {question_terms[5]}) AND year:[2014 TO 2024]")
+        # Sanity check: Ensure queries relate to the original research question
+        # Add initial "safety" query directly derived from research question
+        safety_query = self._create_safety_query(research_question, research_terms)
+        if safety_query and safety_query not in refined_queries:
+            refined_queries.insert(0, safety_query)
         
         # Ensure we have at least one query
         if not refined_queries and research_question:
-            # Create a basic query from the research question
-            words = [w for w in research_question.split() if len(w) > 4]
-            if len(words) >= 2:
-                refined_queries.append(f"({words[0]} AND {words[1]}) AND year:[2014 TO 2024]")
+            # Create a basic query using key terms from the research question
+            main_terms = research_terms[:3] if research_terms else [term for term in research_question.split() if len(term) > 4]
+            if len(main_terms) >= 2:
+                refined_queries.append(f"({main_terms[0]} AND {main_terms[1]}) AND year:[2014 TO 2024]")
         
-        # Remove duplicates and limit to 3 queries
-        unique_queries = []
-        for query in refined_queries:
-            if query not in unique_queries:
-                unique_queries.append(query)
-                if len(unique_queries) >= 3:
-                    break
+        # Limit to 3 queries
+        return refined_queries[:3]
+
+    def _create_safety_query(self, research_question: str, research_terms: List[str]) -> str:
+        """
+        Create a safety query directly from the research question to prevent topic drift.
         
-        return unique_queries
+        Parameters:
+        -----------
+        research_question: The original research question
+        research_terms: Key terms extracted from the research question
         
+        Returns:
+        --------
+        str: A search query directly based on the original research question
+        """
+        # Extract main topics from the research question
+        main_topics_prompt = f"""
+        Extract the 2-3 MAIN TOPICS addressed in this research question:
+        
+        {research_question}
+        
+        Return ONLY a comma-separated list of the main topics (e.g., "artificial intelligence, ethics, healthcare").
+        """
+        
+        main_topics_response = self.ollama.generate(main_topics_prompt)
+        main_topics = [topic.strip() for topic in main_topics_response.split(',') if topic.strip()]
+        
+        # If we have main topics, create a query from them
+        if main_topics and len(main_topics) >= 2:
+            return f"({main_topics[0]} AND {main_topics[1]}) AND year:[2014 TO 2024]"
+        
+        # Otherwise, use research terms
+        if research_terms and len(research_terms) >= 2:
+            return f"({research_terms[0]} AND {research_terms[1]}) AND year:[2014 TO 2024]"
+        
+        # Last resort: extract most important words from the question
+        words = [w.lower() for w in research_question.split() if len(w) > 4 and w.lower() not in ['what', 'where', 'when', 'which', 'there', 'their', 'about', 'would', 'could', 'should', 'utilize', 'utilized']]
+        if len(words) >= 2:
+            return f"({words[0]} AND {words[1]}) AND year:[2014 TO 2024]"
+        
+        return ""
+    
     def extract_specialized_terminology(self, papers: List[Paper]) -> List[str]:
         """
         Extract specialized terminology from papers to improve search refinement.
@@ -1695,7 +1791,7 @@ class PromptEngineer:
         """
         if not papers:
             return []
-            
+
         # Combine abstracts for analysis
         combined_text = "\n\n".join([
             f"Title: {paper.title}\nAbstract: {paper.abstract}"
@@ -1911,7 +2007,7 @@ class PromptEngineer:
         
     def follow_citation_trail(self, initial_papers: List[Paper], research_question: str, literature_manager: Any) -> List[Paper]:
         """
-        Follow citation trails to expand literature search.
+        Follow citation trails to expand literature search while ensuring relevance to the original research.
         
         Parameters:
         -----------
@@ -1923,18 +2019,61 @@ class PromptEngineer:
         --------
         list: List of papers found through citation trails
         """
+        # Extract key terms from research question for validation
+        research_terms_prompt = f"""
+        Extract 3-5 key technical terms from this research question:
+        
+        {research_question}
+        
+        Return ONLY a comma-separated list of the most important technical terms.
+        """
+        
+        research_terms_response = self.ollama.generate(research_terms_prompt)
+        research_terms = [term.strip() for term in research_terms_response.split(',') if term.strip()]
+        
         # Identify potential citation leads from initial papers
         citation_queries = self.identify_citation_leads(initial_papers)
         
-        if not citation_queries:
-            return []
+        # Validate citation queries against research question
+        validated_queries = []
+        for query in citation_queries:
+            # Create a validation prompt
+            validation_prompt = f"""
+            Determine if this search query is DIRECTLY RELEVANT to the original research question.
             
-        # Search for papers based on citation leads
+            Research Question: {research_question}
+            Key Terms: {', '.join(research_terms)}
+            
+            Search Query: {query}
+            
+            Answer with ONLY "YES" if relevant or "NO" if not relevant.
+            A query is relevant if it contains terms that directly relate to the research question.
+            """
+            
+            validation_response = self.ollama.generate(validation_prompt).strip().upper()
+            if "YES" in validation_response:
+                validated_queries.append(query)
+        
+        # If no validated queries, create basic ones from research terms
+        if not validated_queries and research_terms:
+            if len(research_terms) >= 2:
+                validated_queries.append(f"({research_terms[0]} AND {research_terms[1]}) AND year:[1990 TO 2022]")
+            if len(research_terms) >= 3:
+                validated_queries.append(f"({research_terms[0]} AND {research_terms[2]}) AND year:[1990 TO 2022]")
+        
+        # Use original queries as fallback if validation removed all of them
+        if not validated_queries:
+            validated_queries = citation_queries[:2]  # Limit to 2 to reduce off-topic results
+        
+        if not validated_queries:
+            return []
+        
+        # Search for papers based on validated citation leads
         citation_papers = []
         
-        print(f"\nFollowing citation trails with {len(citation_queries)} queries...")
-        for i, query in enumerate(citation_queries):
-            print(f"Citation trail search {i+1}/{len(citation_queries)}: '{query}'")
+        print(f"\nFollowing citation trails with {len(validated_queries)} queries...")
+        for i, query in enumerate(validated_queries):
+            print(f"Citation trail search {i+1}/{len(validated_queries)}: '{query}'")
             
             try:
                 # Use LiteratureManager to search
@@ -1952,19 +2091,22 @@ class PromptEngineer:
                         citation_papers.append(paper)
                         
                 # Small delay between searches
-                if i < len(citation_queries) - 1:
+                if i < len(validated_queries) - 1:
                     import time
                     time.sleep(2)  # 2-second delay between citation searches
                     
             except Exception as e:
                 print(f"Error in citation trail search: {e}")
         
-        # Screen citation papers for relevance to the research question
-        citation_papers = self.screen_papers_by_title(citation_papers)
-        print(f"Title screening for citation papers: {len(citation_papers)} papers passed")
+        # Screen citation papers using both title and abstract
+        title_screened = self.screen_papers_by_title(citation_papers)
+        print(f"Title screening for citation papers: {len(title_screened)}/{len(citation_papers)} papers passed")
         
-        return citation_papers
-
+        abstract_screened = self.screen_papers_by_abstract(title_screened, research_question)
+        print(f"Abstract screening for citation papers: {len(abstract_screened)}/{len(title_screened)} papers passed")
+        
+        return abstract_screened
+    
     def assess_methodology_quality(self, papers: List[Paper]) -> Dict[str, Dict[str, Any]]:
         """
         Assess the methodology quality of papers to prioritize higher quality evidence.
@@ -2226,143 +2368,97 @@ class PromptEngineer:
         
     def synthesize_findings_with_critical_analysis(self, papers: List[Paper], research_question: str) -> str:
         """
-        Synthesize findings with critical analysis of methodology and conflicting evidence.
-        
-        This enhanced synthesis incorporates methodology quality assessment and 
-        explicit analysis of conflicting findings for a more nuanced summary.
+        Synthesize research findings with critical analysis.
         
         Parameters:
         -----------
-        papers: List of papers to synthesize
+        papers: List of relevant papers
         research_question: The research question
         
         Returns:
         --------
-        str: Synthesized findings with critical analysis
+        str: Critical synthesis
         """
+        # If no papers found, return a message about lack of evidence
         if not papers:
-            return "No papers available for synthesis."
-            
-        # First extract key findings from each paper
-        key_findings = {}
-        for i, paper in enumerate(papers):
-            paper_id = f"paper_{i}"
-            
-            # Extract findings with focused prompt
-            prompt = f"""
-            Extract key findings and information from this paper:
-            
-            Title: {paper.title}
-            Authors: {', '.join(paper.authors)}
-            Year: {paper.year if paper.year else 'Unknown'}
-            Abstract: {paper.abstract}
-            
-            Extract:
-            1. The main methodology used
-            2. Key results or findings
-            3. Limitations mentioned
-            4. Implications or applications
-            
-            Format each finding as: "- [Finding description]"
-            Be specific and concise. Include numbers, statistics, or concrete findings when available.
-            Avoid vague generalizations.
-            """
-            
-            response = self.ollama.generate(prompt)
-            
-            # Parse findings
-            findings = [line.strip()[2:].strip() for line in response.split("\n") 
-                       if line.strip() and line.strip().startswith("-")]
-            
-            key_findings[paper_id] = findings
-            
-        # Assess methodology quality
-        methodology_assessments = self.assess_methodology_quality(papers)
+            return "No relevant papers were found to address the research question."
         
-        # Identify conflicts and agreements
-        analysis = self.identify_conflicts_and_agreements(papers, key_findings)
+        # Filter papers to ensure they match the time frame if specified in the research question
+        time_frame_match = re.search(r'(\d{4})[-–](\d{4})', research_question)
+        filtered_papers = papers
         
-        # Generate paper info text with quality assessments
-        papers_with_assessments = []
-        for i, paper in enumerate(papers):
-            paper_id = f"paper_{i}"
+        if time_frame_match:
+            start_year, end_year = map(int, time_frame_match.groups())
+            # Filter papers by publication year
+            filtered_papers = [
+                paper for paper in papers 
+                if paper.year and int(paper.year) >= start_year and int(paper.year) <= end_year
+            ]
             
-            quality_info = ""
-            if paper_id in methodology_assessments:
-                assessment = methodology_assessments[paper_id]
-                quality = assessment.get("quality", "").strip()
-                design = assessment.get("design", "").strip()
+            # If filtering removed all papers, use original set but note the discrepancy
+            if not filtered_papers:
+                filtered_papers = papers
+        
+        # Extract paper info for the prompt
+        paper_info = []
+        for i, paper in enumerate(filtered_papers):
+            authors_str = ", ".join(paper.authors[:3])
+            if len(paper.authors) > 3:
+                authors_str += " et al."
                 
-                if quality or design:
-                    quality_info = f"\nMethodology: {design}\nEvidence Quality: {quality}"
-                    
-                    if assessment.get("strengths"):
-                        strengths = "; ".join(assessment["strengths"])
-                        quality_info += f"\nStrengths: {strengths}"
-                        
-                    if assessment.get("limitations"):
-                        limitations = "; ".join(assessment["limitations"])
-                        quality_info += f"\nLimitations: {limitations}"
-            
-            findings_text = ""
-            if paper_id in key_findings and key_findings[paper_id]:
-                findings_text = "\nFindings:\n" + "\n".join([f"- {finding}" for finding in key_findings[paper_id]])
-                
-            papers_with_assessments.append(
-                f"Paper {i+1} (ID: {paper_id}):\n"
+            paper_info.append(
+                f"Paper_{i}:\n"
                 f"Title: {paper.title}\n"
-                f"Authors: {', '.join(paper.authors)}\n"
-                f"Year: {paper.year if paper.year else 'Unknown'}"
-                f"{quality_info}"
-                f"{findings_text}"
+                f"Authors: {authors_str}\n"
+                f"Year: {paper.year or 'Unknown'}\n"
+                f"Abstract: {paper.abstract}\n"
             )
             
-        papers_text = "\n\n".join(papers_with_assessments)
+        papers_text = "\n\n".join(paper_info)
         
-        # Format conflicts and agreements for synthesis
-        conflicts_text = ""
-        if analysis["conflicts"]:
-            conflicts_text = "Conflicts in the Literature:\n"
-            for i, conflict in enumerate(analysis["conflicts"]):
-                conflicts_text += f"{i+1}. {conflict['point']} - Between papers: {', '.join(conflict['paper_ids'])}\n"
-                conflicts_text += f"   {conflict['explanation']}\n\n"
-                
-        agreements_text = ""
-        if analysis["agreements"]:
-            agreements_text = "Agreements in the Literature:\n"
-            for i, agreement in enumerate(analysis["agreements"]):
-                agreements_text += f"{i+1}. {agreement['point']} - Found in papers: {', '.join(agreement['paper_ids'])}\n"
-                agreements_text += f"   {agreement['explanation']}\n\n"
-                
-        # Create enhanced synthesis prompt
+        # Ensure synthesis focuses on the specific research question
         prompt = f"""
         Research Question: {research_question}
         
-        Paper Information with Quality Assessment:
+        Conduct a comprehensive critical synthesis of the following papers, addressing the research question directly.
+        
         {papers_text}
         
-        {conflicts_text}
-        {agreements_text}
+        Structure your synthesis as follows:
         
-        As a critical research synthesizer, create a comprehensive synthesis of the literature that:
+        **1. Overview of the Literature:**
+        Summarize the current state of research on this topic based on the available papers. Assess how well the collection of papers addresses the research question. Identify any gaps or limitations in the literature.
         
-        1. Addresses the research question directly
-        2. Weighs evidence based on methodology quality (prioritizing higher quality studies)
-        3. Explicitly addresses conflicting findings and potential reasons for disagreements
-        4. Acknowledges limitations in the literature
-        5. Maintains a balanced view of the evidence
-        6. Cites specific papers using their IDs (e.g., [paper_0])
+        **2. Synthesis of Key Findings:**
+        For each paper, extract and synthesize the most relevant findings that address the research question. Use the paper ID (e.g., Paper_0) when referencing specific papers.
         
-        Structure your synthesis with these sections:
-        - Overview of the Literature
-        - Synthesis of Key Findings (with reference to methodology quality)
-        - Analysis of Conflicts and Agreements
-        - Limitations of Current Evidence
-        - Conclusions and Implications
+        **3. Analysis of Conflicts and Agreements:**
+        Identify where the papers agree or disagree on key points. Analyze the potential reasons for any conflicts or inconsistencies in the literature.
         
-        The synthesis should be scholarly, nuanced, and reflect the current state of evidence, including uncertainties.
+        **4. Limitations of Current Evidence:**
+        Critically assess the quality, validity, and generalizability of the evidence presented across these papers. What methodological limitations might affect the reliability of findings?
+        
+        **5. Conclusions and Implications:**
+        Based on this analysis, provide conclusions that directly address the research question. Discuss implications for theory, practice, and future research.
+        
+        **Additional Relevant Research**
+        In one paragraph, mention any highly relevant research areas or potential papers that would be valuable to consult but aren't included in the analyzed set.
+        
+        **Research Question Alignment**
+        In one final paragraph, critically evaluate how well this synthesis addresses the original research question. If there are gaps or misalignments, explicitly note what additional information would be needed to fully address the question.
+        
+        IMPORTANT:
+        1. Maintain strict focus on the research question: "{research_question}"
+        2. Be critical and analytical, not just descriptive
+        3. When using Paper_X references, ensure they accurately reflect the content of each paper
+        4. Do NOT fabricate or exaggerate findings
+        5. Do NOT add citations using [X] format - use Paper_X format instead
+        6. Acknowledge when evidence is insufficient to draw strong conclusions
+        7. Ensure your analysis is DIRECTLY relevant to the exact topic asked about
+        8. If the papers don't fully address the research question, explicitly acknowledge this limitation
         """
         
+        # Generate the synthesis
         synthesis = self.ollama.generate(prompt)
         
-        return synthesis 
+        return synthesis
