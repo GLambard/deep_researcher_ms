@@ -63,6 +63,20 @@ class LiteratureManager:
         # List to store history of all searches performed
         self.search_history: List[Dict] = []
     
+    def reset_tracking(self):
+        """
+        Reset the paper tracking and search history.
+        
+        This method clears the internal tracking of seen papers and search history,
+        which is useful when starting a completely new research query to avoid
+        any influence from previous searches.
+        """
+        # Clear the set of seen papers
+        self.seen_papers.clear()
+        
+        # Optionally, also clear search history if desired
+        self.search_history.clear()
+    
     def search(
         self,
         query: str,
@@ -71,36 +85,39 @@ class LiteratureManager:
         sources: Optional[List[str]] = None
     ) -> List[Paper]:
         """
-        Synchronous wrapper for the async search method.
+        Search for papers across selected API sources.
         
-        This method creates a new event loop if needed and runs the async search
-        method within it, allowing for synchronous usage of the API.
+        This is a synchronous wrapper around the async search method,
+        making it easier to use in non-async contexts.
         
         Parameters:
         -----------
-        query: The search query string for finding relevant papers
-        max_papers: Maximum number of papers to return per source (default: 10)
-        year_range: Optional tuple of (start_year, end_year) for filtering
-        sources: Optional list of sources to use
+        query: The search query string
+        max_papers: Maximum number of papers to return per source
+        year_range: Optional tuple of (start_year, end_year)
+        sources: Optional list of source APIs to use
             
         Returns:
         --------
-        list: List of unique Paper objects matching the query
+        list: List of Paper objects
         """
-        # Check if we're already in an event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # We're in an event loop already, can't use run_until_complete
-                print("Warning: Running in an existing event loop, asyncio.run() not possible")
-                print("Please use async_search() method instead in asynchronous code")
-                return []
-        except RuntimeError:
-            # No event loop exists, create a new one
-            pass
+        # Create an event loop for async execution
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
-        # Run the async search in a new event loop
-        return asyncio.run(self.async_search(query, max_papers, year_range, sources))
+        try:
+            # Run the async search method in the loop
+            return loop.run_until_complete(
+                self.async_search(
+                    query=query, 
+                    max_papers=max_papers,
+                    year_range=year_range,
+                    sources=sources
+                )
+            )
+        finally:
+            # Clean up the loop
+            loop.close()
 
     async def async_search(
         self,

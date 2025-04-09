@@ -26,6 +26,7 @@ load_dotenv(env_path)
 from src.search.literature_manager import LiteratureManager
 from src.ollama_client import OllamaClient
 from src.prompt_engineering_human import PromptEngineer
+from utils.cache import clear_cache  # Import the clear_cache function
 
 def check_environment():
     """Check if all required components are set up."""
@@ -96,6 +97,12 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
     pseudo-algorithm, from defining the research question to synthesizing findings.
     """
     try:
+        # Clear the cache before starting a new query to avoid data leakage
+        print("\n[STEP 0] Clearing cache to ensure clean results...")
+        clear_cache()
+        literature_manager.reset_tracking()
+        print("✓ Cache cleared and tracking reset successfully")
+        
         # STEP 1: Define the Research Question & Scope
         print("\n[STEP 1] Defining the research question and scope...")
         research_def = prompt_engineer.define_research_question(query)
@@ -178,34 +185,22 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             print("3. Network connectivity issues")
             return
         
-        # STEP 4: Title Screening
-        print("\n[STEP 4] Screening papers by title...")
-        title_passed_papers = prompt_engineer.screen_papers_by_title(
+        # STEP 4-5: Combined screening of papers by title AND abstract
+        print("\n[STEP 4-5] Screening papers by title and abstract...")
+        relevant_papers = prompt_engineer.screen_papers_by_title_and_abstract(
             all_papers,
             research_question=research_def['research_question']
         )
-        print(f"Title screening: {len(title_passed_papers)}/{len(all_papers)} papers passed")
+        print(f"Combined screening: {len(relevant_papers)}/{len(all_papers)} papers passed")
         
-        if not title_passed_papers:
-            print("No papers passed title screening. Try adjusting search terms or criteria.")
-            return
-            
-        # STEP 5: Abstract Screening
-        print("\n[STEP 5] Screening papers by abstract...")
-        abstract_passed_papers = prompt_engineer.screen_papers_by_abstract(
-            title_passed_papers, 
-            research_def['research_question']
-        )
-        print(f"Abstract screening: {len(abstract_passed_papers)}/{len(title_passed_papers)} papers passed")
-        
-        if not abstract_passed_papers:
-            print("No papers passed abstract screening. Try adjusting criteria or search terms.")
+        if not relevant_papers:
+            print("No papers passed combined screening. Try adjusting search terms or criteria.")
             return
             
         # Iterative Search Refinement - human researchers refine based on initial findings
         print("\n[STEP 3b] Refining search based on initial papers...")
         refined_queries = prompt_engineer.generate_refined_search_queries(
-            abstract_passed_papers, 
+            relevant_papers, 
             research_def['research_question']
         )
         
@@ -252,32 +247,24 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             
             # Screen refined papers
             if refined_papers:
-                # Title screening for refined papers
-                refined_title_passed = prompt_engineer.screen_papers_by_title(
+                # Combined screening for refined papers
+                refined_passed = prompt_engineer.screen_papers_by_title_and_abstract(
                     refined_papers,
                     research_question=research_def['research_question']
                 )
-                print(f"Title screening for refined papers: {len(refined_title_passed)}/{len(refined_papers)} passed")
+                print(f"Combined screening for refined papers: {len(refined_passed)}/{len(refined_papers)} passed")
                 
-                # Abstract screening for refined papers
-                if refined_title_passed:
-                    refined_abstract_passed = prompt_engineer.screen_papers_by_abstract(
-                        refined_title_passed,
-                        research_def['research_question']
-                    )
-                    print(f"Abstract screening for refined papers: {len(refined_abstract_passed)}/{len(refined_title_passed)} passed")
-                    
-                    # Add passed papers to our collection
-                    for paper in refined_abstract_passed:
-                        if paper not in abstract_passed_papers:
-                            abstract_passed_papers.append(paper)
-                            
-                    print(f"Total relevant papers after refinement: {len(abstract_passed_papers)}")
+                # Add passed papers to our collection
+                for paper in refined_passed:
+                    if paper not in relevant_papers:
+                        relevant_papers.append(paper)
+                        
+                print(f"Total relevant papers after refinement: {len(relevant_papers)}")
         
         # Follow citation trails
         print("\n[STEP 3c] Following citation trails...")
         citation_papers = prompt_engineer.follow_citation_trail(
-            abstract_passed_papers,
+            relevant_papers,
             research_def['research_question'],
             literature_manager
         )
@@ -285,31 +272,31 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         if citation_papers:
             print(f"Found {len(citation_papers)} relevant papers from citation trails")
             
-            # Abstract screening for citation papers
-            citation_abstract_passed = prompt_engineer.screen_papers_by_abstract(
+            # Combined screening for citation papers
+            citation_passed = prompt_engineer.screen_papers_by_title_and_abstract(
                 citation_papers,
                 research_def['research_question']
             )
-            print(f"Abstract screening for citation papers: {len(citation_abstract_passed)}/{len(citation_papers)} passed")
+            print(f"Combined screening for citation papers: {len(citation_passed)}/{len(citation_papers)} passed")
             
             # Add unique papers to our collection
-            for paper in citation_abstract_passed:
-                if paper not in abstract_passed_papers:
-                    abstract_passed_papers.append(paper)
+            for paper in citation_passed:
+                if paper not in relevant_papers:
+                    relevant_papers.append(paper)
                     
-            print(f"Total relevant papers after following citation trails: {len(abstract_passed_papers)}")
+            print(f"Total relevant papers after following citation trails: {len(relevant_papers)}")
         
         # STEP 6: Full-text review and STEP 7: Critical analysis and synthesis
         print("\n[STEP 6-7] Extracting findings, analyzing methodologies, and synthesizing literature...")
         synthesis = prompt_engineer.synthesize_findings_with_critical_analysis(
-            abstract_passed_papers,
+            relevant_papers,
             research_def['research_question']
         )
         
         # STEP 8: Construct final answer with proper citations
         print("\n[STEP 8] Constructing final answer with proper citations...")
         final_response = prompt_engineer.integrate_literature(
-            papers=abstract_passed_papers,
+            papers=relevant_papers,
             query=query,  # Pass the original query for strong domain anchoring
             structured_synthesis=synthesis  # Pass the structured synthesis from STEP 6-7
         )
@@ -374,7 +361,7 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             f.write(f"Selected sources: {', '.join(sources)}\n")
             
             f.write("\n=== STEP 4-5: Retrieved Papers ===\n")
-            for i, paper in enumerate(abstract_passed_papers):
+            for i, paper in enumerate(relevant_papers):
                 f.write(f"\n{i+1}. {paper.title}\n")
                 f.write(f"   Authors: {', '.join(paper.authors)}\n")
                 f.write(f"   Year: {paper.year}\n")

@@ -2238,3 +2238,119 @@ class PromptEngineer:
         synthesis = self.ollama.generate(prompt)
 
         return synthesis
+
+    def screen_papers_by_title_and_abstract(self, papers: List[Paper], research_question: str, domain_context: str = "") -> List[Paper]:
+        """
+        STEP 4-5: Combined screening of papers by title AND abstract in a single step.
+        
+        This method performs a comprehensive evaluation of papers by examining both
+        titles and abstracts simultaneously, making the filtering process more efficient.
+        
+        Parameters:
+        -----------
+        papers: List of papers to screen
+        research_question: The research question to compare against
+        domain_context: Key domain terms to focus on
+        
+        Returns:
+        --------
+        list: List of papers that passed combined title and abstract screening
+        """
+        if not papers:
+            return []
+            
+        # Extract mandatory keywords that MUST be present in relevant papers
+        query_keywords_prompt = f"""
+        From this research question, extract 3-4 PRIMARY technical terms that are ABSOLUTELY ESSENTIAL for relevant papers:
+        
+        "{research_question}"
+        
+        Focus ONLY on the central technical terms, methodologies, or concepts that define the core of this research question.
+        These terms will be used as MANDATORY filter criteria - papers lacking these terms will be excluded.
+        
+        Return ONLY a comma-separated list of these essential terms.
+        """
+        
+        keywords_response = self.ollama.generate(query_keywords_prompt)
+        primary_keywords = [kw.strip().lower() for kw in keywords_response.split(',') if kw.strip()]
+        
+        # Format papers for evaluation
+        papers_info = "\n".join([
+            f"Paper {i+1}:\nTitle: {paper.title}\nAbstract: {paper.abstract}" 
+            for i, paper in enumerate(papers)
+        ])
+        
+        # Create a prompt focusing on comprehensive evaluation of both title and abstract
+        prompt = f"""
+        You're a researcher conducting a focused literature review on:
+        "{research_question}"
+        
+        The key technical terms for this research question are: {', '.join(primary_keywords)}
+        
+        Review these papers by examining BOTH their titles AND abstracts.
+        Apply these strict criteria:
+        
+        1. DIRECT relevance to the research topic - must address the primary keywords
+        2. Clear methodology and approach that aligns with the research question
+        3. Findings or contributions that directly advance understanding of the topic
+        4. Appropriate scope - neither too broad nor too specific for the question
+        
+        Be HIGHLY SELECTIVE - only choose papers that are CLEARLY relevant.
+        REJECT papers that are:
+        - Only tangentially related
+        - From different domains/fields
+        - Too general or superficial in their treatment of the topic
+        - Focused on different applications or contexts
+        
+        Assess the following papers:
+        {papers_info}
+        
+        For each paper, respond only with the paper number if it is DIRECTLY relevant.
+        Use this format exactly: "Relevant papers: 1, 3, 5" (just the numbers in a comma-separated list)
+        If no papers are relevant, respond with: "Relevant papers: none"
+        """
+        
+        response = self.ollama.generate(prompt)
+        
+        # Extract paper numbers using regex
+        import re
+        
+        # Check if "none" is in the response
+        if re.search(r'(?:relevant|relevance).*none', response.lower()):
+            return []
+        
+        numbers = re.findall(r'\d+', response)
+        
+        try:
+            # Convert to indices (0-based)
+            indices = [int(num) - 1 for num in numbers if 0 < int(num) <= len(papers)]
+            
+            # Return papers that passed combined screening
+            passed_papers = [papers[i] for i in indices if 0 <= i < len(papers)]
+            
+            # If too few papers pass, consider adding a few more based on keyword matching
+            if len(passed_papers) < min(2, len(papers)):
+                additional_count = min(2, len(papers)) - len(passed_papers)
+                
+                # Count keyword occurrences in remaining papers
+                potentially_relevant = []
+                for i, paper in enumerate(papers):
+                    if paper not in passed_papers:
+                        text = (paper.title + " " + paper.abstract).lower()
+                        keyword_count = sum(1 for kw in primary_keywords if kw in text)
+                        if keyword_count > 0:
+                            potentially_relevant.append((i, keyword_count, paper))
+                
+                # Sort by keyword match count (descending)
+                potentially_relevant.sort(key=lambda x: x[1], reverse=True)
+                
+                # Add the most relevant papers
+                for _, _, paper in potentially_relevant[:additional_count]:
+                    passed_papers.append(paper)
+                    
+            return passed_papers
+            
+        except Exception as e:
+            print(f"Error during combined title and abstract screening: {e}")
+            # Fallback: return a limited number of papers if parsing fails
+            return papers[:min(3, len(papers))]
