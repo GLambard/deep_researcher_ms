@@ -103,6 +103,30 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         literature_manager.reset_tracking()
         print("✓ Cache cleared and tracking reset successfully")
         
+        # Store the original query for reference
+        original_query = query
+        
+        # STEP 0A: Generate clarification questions
+        print("\n[STEP 0A] Generating clarification questions...")
+        clarification_questions = prompt_engineer.generate_clarification_questions(query)
+        
+        if clarification_questions:
+            print("\nTo better focus the search, please answer these clarification questions:")
+            
+            clarifications = {}
+            for i, question in enumerate(clarification_questions, 1):
+                print(f"\n{i}. {question}")
+                answer = input("Your answer: ").strip()
+                clarifications[question] = answer
+            
+            # STEP 0B: Construct refined query
+            print("\n[STEP 0B] Constructing refined query based on clarifications...")
+            refined_query = prompt_engineer.construct_refined_query(original_query, clarifications)
+            print(f"\nRefined Query: {refined_query}")
+            
+            # Use the refined query for subsequent steps
+            query = refined_query
+        
         # STEP 1: Define the Research Question & Scope
         print("\n[STEP 1] Defining the research question and scope...")
         research_def = prompt_engineer.define_research_question(query)
@@ -342,6 +366,16 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(f"Research Query: {query}\n\n")
+            
+            # Include clarification details if available
+            if 'clarifications' in locals() and clarifications:
+                f.write("=== STEP 0: Query Clarification ===\n")
+                f.write(f"Original Query: {original_query}\n\n")
+                f.write("Clarification Questions and Answers:\n")
+                for question, answer in clarifications.items():
+                    f.write(f"Q: {question}\n")
+                    f.write(f"A: {answer}\n\n")
+                f.write(f"Refined Query: {query}\n\n")
             
             f.write("=== STEP 1: Research Question & Scope ===\n")
             f.write(f"Research Question: {research_def['research_question']}\n")

@@ -57,6 +57,110 @@ class PromptEngineer:
         """
         self.ollama = ollama_client
     
+    def generate_clarification_questions(self, query: str) -> List[str]:
+        """
+        STEP 0A: Generate clarification questions for the initial query.
+        
+        This method analyzes the user's query and generates targeted questions
+        that will help clarify ambiguities, narrow the scope, and improve
+        the precision of the search.
+        
+        Parameters:
+        -----------
+        query: The user's original research query
+        
+        Returns:
+        --------
+        list: A list of up to 5 clarification questions
+        """
+        prompt = f"""
+        Analyze the following research query and generate up to 5 targeted questions
+        that would help clarify its scope, intent, and focus:
+        
+        QUERY: "{query}"
+        
+        The questions should:
+        1. Address potential ambiguities in terminology or concepts
+        2. Help narrow down the scope to a manageable research area
+        3. Identify specific aspects that would benefit from clarification
+        4. Be answerable with brief responses
+        5. Focus on details that would significantly impact the search strategy
+        
+        Examples of good clarification questions:
+        - For "How does climate change affect coral reefs?": "Are you interested in specific geographical regions or global effects?"
+        - For "What are the applications of machine learning?": "Which specific domains of machine learning application are you most interested in?"
+        
+        Format your response as a numbered list of ONLY the questions, with no additional text.
+        Limit to a MAXIMUM of 5 questions, focusing on the most important clarifications needed.
+        """
+        
+        response = self.ollama.generate(prompt)
+        
+        # Parse the response to extract questions
+        questions = []
+        for line in response.strip().split('\n'):
+            # Look for lines that start with a number or bullet point
+            if re.match(r'^\d+[\.\)]|^-|^\*', line.strip()):
+                # Extract just the question part, removing any numbering
+                question = re.sub(r'^\d+[\.\)]|^-|^\*\s*', '', line.strip())
+                if question and '?' in question:  # Ensure it's actually a question
+                    questions.append(question.strip())
+        
+        # Ensure we return no more than 5 questions
+        return questions[:5]
+    
+    def construct_refined_query(self, original_query: str, clarifications: Dict[str, str]) -> str:
+        """
+        STEP 0B: Construct a refined query based on clarifications.
+        
+        This method takes the original query and user-provided clarifications,
+        then constructs a more precise query that incorporates these details.
+        
+        Parameters:
+        -----------
+        original_query: The user's original research query
+        clarifications: Dictionary of clarification questions and their answers
+        
+        Returns:
+        --------
+        str: A refined, more specific query string
+        """
+        # Format the clarifications as a string
+        clarification_text = "\n".join([
+            f"Question: {question}\nAnswer: {answer}"
+            for question, answer in clarifications.items()
+        ])
+        
+        prompt = f"""
+        Your task is to construct a refined, focused research query based on the original query
+        and the clarifications provided by the user.
+        
+        Original Query: "{original_query}"
+        
+        Clarifications:
+        {clarification_text}
+        
+        Using this information, craft a single clear, specific research query that:
+        1. Incorporates the key points from the clarifications
+        2. Is more precise and focused than the original query
+        3. Uses proper Boolean operators (AND, OR) with parentheses where needed
+        4. Places multi-word terms in quotes for exact matching
+        5. Is optimized for academic database searching
+        
+        The query should be comprehensive yet specific, capturing exactly what the user is looking for.
+        
+        Return ONLY the refined query with no additional explanation or commentary.
+        """
+        
+        refined_query = self.ollama.generate(prompt)
+        
+        # Clean up the response - remove quotes, extra whitespace, etc.
+        refined_query = refined_query.strip()
+        if refined_query.startswith('"') and refined_query.endswith('"'):
+            refined_query = refined_query[1:-1].strip()
+        
+        return refined_query
+    
     def define_research_question(self, query: str) -> Dict[str, Any]:
         """
         STEP 1: Define the research question, scope, and initial search queries.

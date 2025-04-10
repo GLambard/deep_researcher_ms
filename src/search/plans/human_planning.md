@@ -4,6 +4,19 @@ Below is a pseudo‐algorithm that captures a human-like reasoning process for c
 
 **Pseudo-Algorithm: Literature Review Process**
 
+0. **Clarify and Refine the Query** 
+   - **Input:** Initial broad or ambiguous scientific query.
+   - **Action:**
+     - Identify aspects of the query that would benefit from clarification.
+     - Ask targeted questions to narrow the scope and clarify intent.
+     - Reformulate the query based on clarifications to create a more precise search focus.
+   - **Pseudo-code snippet:**
+     ```python
+     clarification_questions = generate_questions(initial_query)
+     clarification_answers = ask_user(clarification_questions)
+     refined_query = reformulate_query(initial_query, clarification_answers)
+     ```
+
 1. **Define the Research Question & Scope**
    - **Input:** Scientific query, key concepts, and terms.
    - **Action:** Clearly articulate the research question, and define inclusion/exclusion criteria (e.g., study type, publication date, methodology).
@@ -32,8 +45,8 @@ Below is a pseudo‐algorithm that captures a human-like reasoning process for c
 5. **Abstract Screening**
    - **Action:** 
      - Read the abstract of each candidate article.
-     - Evaluate whether the study’s methods, scope, and conclusions align with your query.
-     - Exclude those that don’t meet the inclusion criteria.
+     - Evaluate whether the study's methods, scope, and conclusions align with your query.
+     - Exclude those that don't meet the inclusion criteria.
    - **Pseudo-code snippet:**
      ```python
      for article in candidate_list:
@@ -76,7 +89,8 @@ Below is a pseudo‐algorithm that captures a human-like reasoning process for c
 
 **Summary of the Process:**
 
-- **Query Definition:** Start with a clear research question.
+- **Query Refinement:** Begin by clarifying the initial query to ensure it's focused and specific.
+- **Query Definition:** Formulate a clear research question based on the refined query.
 - **Source Identification:** Choose the right databases and search terms.
 - **Screening:** Begin with titles, then abstracts to quickly filter out irrelevant works.
 - **Deep Dive:** Retrieve and analyze full texts for in-depth insights.
