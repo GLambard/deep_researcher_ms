@@ -170,9 +170,36 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
         print("\n[STEP 3] Searching for initial papers...")
         all_papers = []
         for i, search_query in enumerate(search_queries):
-            # Don't remove quotes - they're important for precision
-            # search_query = search_query.replace("\"", "")
             print(f"\nSearching for: '{search_query}' ({i+1}/{len(search_queries)})")
+            
+            # Validate query before searching
+            is_valid, error_message = literature_manager.validate_query(search_query)
+            if not is_valid:
+                print(f"Warning: Invalid query syntax: {error_message}")
+                fixed_query, was_modified, modification_message = literature_manager.fix_query(search_query)
+                
+                if was_modified:
+                    print(f"Query automatically fixed: {modification_message}")
+                    print(f"Using fixed query: '{fixed_query}'")
+                    search_query = fixed_query
+                else:
+                    print("Query could not be fixed automatically.")
+                    # Try with some basic fixes as a fallback
+                    # Fix unbalanced parentheses
+                    fixed_query = search_query
+                    open_count = fixed_query.count('(')
+                    close_count = fixed_query.count(')')
+                    if open_count > close_count:
+                        fixed_query += ')' * (open_count - close_count)
+                    elif close_count > open_count:
+                        fixed_query = '(' * (close_count - open_count) + fixed_query
+                    
+                    # Fix unbalanced quotes
+                    if fixed_query.count('"') % 2 != 0:
+                        fixed_query += '"'
+                    
+                    print(f"Using fallback fixes: '{fixed_query}'")
+                    search_query = fixed_query
             
             try:
                 # Set limit lower for multiple queries to avoid overwhelming the system
@@ -187,18 +214,20 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
                 
                 # Implement exponential backoff with jitter for rate limiting
                 if i < len(search_queries) - 1:
-                    base_delay = 1.0  # Start with 1 second base delay
-                    max_delay = 8.0   # Maximum delay in seconds
+                    base_delay = 2.0  # Increased from 1.0 to 2.0 seconds
+                    max_delay = 15.0  # Increased from 8.0 to 15.0 seconds
                     retry_count = i + 1  # Use query index as retry count
-                    jitter = random.uniform(0, 0.5)  # Add random jitter
+                    jitter = random.uniform(0, 1.0)  # Increased jitter range
                     
-                    # Calculate exponential backoff with jitter (min 1 second, max as specified)
+                    # Calculate exponential backoff with jitter (min 2 seconds, max as specified)
                     delay = min(base_delay * (2 ** (retry_count - 1)) + jitter, max_delay)
                     print(f"Waiting {delay:.2f} seconds before next query...")
                     time.sleep(delay)
                     
             except Exception as e:
                 print(f"Warning: Search failed for query '{search_query}': {e}")
+                print("This might be due to API rate limits or server issues. Waiting before continuing...")
+                time.sleep(5.0)  # Add extra delay after failures
         
         print(f"\nTotal initial papers retrieved: {len(all_papers)}")
         
@@ -236,9 +265,36 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
             # Search with refined queries
             refined_papers = []
             for i, refined_query in enumerate(refined_queries):
-                # Don't remove quotes - they're important for precision
-                # refined_query = refined_query.replace("\"", "")
                 print(f"\nSearching with refined query: '{refined_query}' ({i+1}/{len(refined_queries)})")
+                
+                # Validate query before searching
+                is_valid, error_message = literature_manager.validate_query(refined_query)
+                if not is_valid:
+                    print(f"Warning: Invalid refined query syntax: {error_message}")
+                    fixed_query, was_modified, modification_message = literature_manager.fix_query(refined_query)
+                    
+                    if was_modified:
+                        print(f"Query automatically fixed: {modification_message}")
+                        print(f"Using fixed query: '{fixed_query}'")
+                        refined_query = fixed_query
+                    else:
+                        print("Query could not be fixed automatically.")
+                        # Try with some basic fixes as a fallback
+                        # Fix unbalanced parentheses
+                        fixed_query = refined_query
+                        open_count = fixed_query.count('(')
+                        close_count = fixed_query.count(')')
+                        if open_count > close_count:
+                            fixed_query += ')' * (open_count - close_count)
+                        elif close_count > open_count:
+                            fixed_query = '(' * (close_count - open_count) + fixed_query
+                        
+                        # Fix unbalanced quotes
+                        if fixed_query.count('"') % 2 != 0:
+                            fixed_query += '"'
+                        
+                        print(f"Using fallback fixes: '{fixed_query}'")
+                        refined_query = fixed_query
                 
                 try:
                     papers = literature_manager.search(
@@ -256,16 +312,18 @@ def process_query(query: str, prompt_engineer: PromptEngineer, literature_manage
                             
                     # Apply exponential backoff between queries
                     if i < len(refined_queries) - 1:
-                        base_delay = 1.0
-                        max_delay = 8.0
+                        base_delay = 2.0  # Increased from 1.0 to 2.0 seconds
+                        max_delay = 15.0  # Increased from 8.0 to 15.0 seconds
                         retry_count = i + 1
-                        jitter = random.uniform(0, 0.5)
+                        jitter = random.uniform(0, 1.0)  # Increased jitter range
                         delay = min(base_delay * (2 ** (retry_count - 1)) + jitter, max_delay)
                         print(f"Waiting {delay:.2f} seconds before next query...")
                         time.sleep(delay)
                         
                 except Exception as e:
                     print(f"Warning: Refined search failed for query '{refined_query}': {e}")
+                    print("This might be due to API rate limits or server issues. Waiting before continuing...")
+                    time.sleep(5.0)  # Add extra delay after failures
             
             print(f"\nFound {len(refined_papers)} additional papers through refined searches")
             

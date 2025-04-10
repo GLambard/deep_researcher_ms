@@ -147,6 +147,9 @@ class PromptEngineer:
         4. Places multi-word terms in quotes for exact matching
         5. Is optimized for academic database searching
         
+        IMPORTANT: Ensure all parentheses are properly balanced and each opening quotation mark has a closing one.
+        Check that Boolean operators (AND, OR, NOT) are properly used between terms, not at the beginning or end.
+        
         The query should be comprehensive yet specific, capturing exactly what the user is looking for.
         
         Return ONLY the refined query with no additional explanation or commentary.
@@ -159,7 +162,72 @@ class PromptEngineer:
         if refined_query.startswith('"') and refined_query.endswith('"'):
             refined_query = refined_query[1:-1].strip()
         
+        # Perform query validation and auto-correction
+        refined_query = self._validate_and_fix_query_syntax(refined_query)
+        
         return refined_query
+    
+    def _validate_and_fix_query_syntax(self, query: str) -> str:
+        """
+        Validate and automatically fix common query syntax issues.
+        
+        This helper method ensures that:
+        1. All parentheses are balanced
+        2. All quotation marks are balanced
+        3. Boolean operators are properly used
+        
+        Parameters:
+        -----------
+        query: The query string to validate and fix
+        
+        Returns:
+        --------
+        str: The fixed query with balanced syntax
+        """
+        fixed_query = query
+        
+        # Fix unbalanced parentheses
+        open_count = fixed_query.count('(')
+        close_count = fixed_query.count(')')
+        
+        if open_count > close_count:
+            # Add missing closing parentheses
+            fixed_query += ')' * (open_count - close_count)
+        elif close_count > open_count:
+            # Add missing opening parentheses at the beginning
+            fixed_query = '(' * (close_count - open_count) + fixed_query
+        
+        # Fix unbalanced quotes
+        if fixed_query.count('"') % 2 != 0:
+            # Simple fix - add a closing quote at the end
+            fixed_query += '"'
+        
+        # Ensure Boolean operators aren't at the beginning or end
+        boolean_ops = ['AND', 'OR', 'NOT']
+        words = fixed_query.split()
+        
+        # Remove operator from beginning if present
+        if words and words[0].upper() in boolean_ops:
+            words = words[1:]
+        
+        # Remove operator from end if present
+        if words and words[-1].upper() in boolean_ops:
+            words = words[:-1]
+        
+        # Fix consecutive operators
+        i = 0
+        while i < len(words) - 1:
+            if words[i].upper() in boolean_ops and words[i+1].upper() in boolean_ops:
+                # Remove the second operator
+                words.pop(i+1)
+            else:
+                i += 1
+        
+        # Reconstruct the query
+        if words:
+            fixed_query = ' '.join(words)
+        
+        return fixed_query
     
     def define_research_question(self, query: str) -> Dict[str, Any]:
         """
